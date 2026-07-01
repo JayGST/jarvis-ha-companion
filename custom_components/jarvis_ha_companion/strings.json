@@ -1,0 +1,13 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "JARVIS Home Assistant Companion",
+        "description": "Set up the JARVIS companion integration."
+      }
+    },
+    "abort": {
+      "already_configured": "JARVIS Home Assistant Companion is already configured."
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "domain": "jarvis_ha_companion",
+  "name": "JARVIS Home Assistant Companion",
+  "codeowners": [],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/jarvis/jarvis-ha-companion",
+  "integration_type": "service",
+  "iot_class": "local_push",
+  "requirements": [],
+  "version": "0.1.0"
+}
