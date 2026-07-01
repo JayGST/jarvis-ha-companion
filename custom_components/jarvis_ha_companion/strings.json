@@ -3,7 +3,10 @@
     "step": {
       "user": {
         "title": "JARVIS Home Assistant Companion",
-        "description": "Set up the JARVIS companion integration."
+        "description": "Set up the JARVIS companion integration.",
+        "data": {
+          "base_url": "JARVIS Add-on base URL"
+        }
       }
     },
     "abort": {

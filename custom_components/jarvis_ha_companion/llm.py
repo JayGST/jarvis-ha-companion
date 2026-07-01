@@ -10,6 +10,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import llm
 from homeassistant.util.json import JsonObjectType
 
+from .addon_client import JarvisAddonClient
 from .const import DOMAIN
 
 API_ID = f"{DOMAIN}.capabilities"
@@ -23,6 +24,16 @@ API_PROMPT = (
 class JarvisLLMAPI(llm.API):
     """JARVIS LLM API boundary."""
 
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        api_id: str,
+        name: str,
+        client: JarvisAddonClient,
+    ) -> None:
+        super().__init__(hass, api_id, name)
+        self._client = client
+
     async def async_get_api_instance(
         self,
         llm_context: llm.LLMContext,
@@ -32,12 +43,12 @@ class JarvisLLMAPI(llm.API):
             api=self,
             api_prompt=API_PROMPT,
             llm_context=llm_context,
-            tools=[InspectProjectModuleTool()],
+            tools=[InspectProjectModuleTool(self._client)],
         )
 
 
 class InspectProjectModuleTool(llm.Tool):
-    """Placeholder tool for Project JARVIS module inspection."""
+    """Tool for Project JARVIS module inspection."""
 
     name = "inspect_project_module"
     description = (
@@ -50,25 +61,32 @@ class InspectProjectModuleTool(llm.Tool):
         }
     )
 
+    def __init__(self, client: JarvisAddonClient) -> None:
+        self._client = client
+
     async def async_call(
         self,
         hass: HomeAssistant,
         tool_input: llm.ToolInput,
         llm_context: llm.LLMContext,
     ) -> JsonObjectType:
-        """Return a placeholder result until Add-on execution is connected."""
-        return {
-            "message": (
-                "JARVIS inspect_project_module tool is registered, "
-                "but Add-on execution is not connected yet."
-            ),
-            "module_name": tool_input.tool_args["module_name"],
-        }
+        """Call the JARVIS Add-on inspect_project_module capability."""
+        module_name = tool_input.tool_args["module_name"]
+
+        return await self._client.execute_capability(
+            capability="inspect_project_module",
+            parameters={
+                "module_name": module_name,
+            },
+        )
 
 
-def async_setup_llm_api(hass: HomeAssistant) -> Callable[[], None]:
+def async_setup_llm_api(
+    hass: HomeAssistant,
+    client: JarvisAddonClient,
+) -> Callable[[], None]:
     """Register the JARVIS LLM API with Home Assistant."""
     return llm.async_register_api(
         hass,
-        JarvisLLMAPI(hass, API_ID, API_NAME),
+        JarvisLLMAPI(hass, API_ID, API_NAME, client),
     )
