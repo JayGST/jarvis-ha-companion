@@ -27,13 +27,16 @@ API_PROMPT = (
     "and do not invent capabilities. "
     "Use list_capabilities for questions about what JARVIS can do or "
     "which Capability API functions are implemented. "
-    "Use list_extensions for questions about installed or available optional "
-    "JARVIS extensions, Erweiterungen, or optional abilities. "
-    "list_extensions currently lists only installed/available extensions. "
+    "Always use list_extensions for questions containing or meaning "
+    "Erweiterungen, Extensions, optionale Fähigkeiten, optional abilities, "
+    "or optionale Fähigkeitserweiterungen. "
+    "list_extensions lists only installed or currently available optional "
+    "JARVIS extensions. "
     "Use list_project_modules for questions about modules, components, "
-    "packages, architecture, project structure, or implementation overview. "
-    "list_project_modules is deprecated and legacy; do not use it for "
-    "extension questions. "
+    "packages, architecture, technical project structure, or implementation "
+    "overview only. list_project_modules is deprecated and legacy. Never use "
+    "list_project_modules for Erweiterungen, Extensions, optionale "
+    "Fähigkeiten, optional abilities, or extension questions. "
     "Use inspect_project_module for questions about one specific module, "
     "feature, or capability."
 )
@@ -106,15 +109,17 @@ class InspectProjectModuleTool(llm.Tool):
 
 
 class ListProjectModulesTool(llm.Tool):
-    """Tool for listing known Project JARVIS modules."""
+    """Legacy tool for listing technical Project JARVIS modules."""
 
     name = "list_project_modules"
     description = (
-        "Use when the user asks which Project JARVIS modules, components, "
-        "packages, architecture elements, project-structure items, or "
-        "implementation units exist or are planned. This is a deprecated "
-        "legacy tool. Do not use for extension questions or general questions "
-        "about what JARVIS can do as an assistant."
+        "Deprecated legacy tool. Use only for technical Project JARVIS "
+        "structure questions about modules, components, packages, architecture "
+        "elements, project-structure items, or implementation units. Never use "
+        "for Erweiterungen, Extensions, optionale Fähigkeiten, optional "
+        "abilities, optionale Fähigkeitserweiterungen, or any extension "
+        "question. For extension questions use list_extensions instead. For "
+        "general ability questions use list_capabilities instead."
     )
     parameters = vol.Schema({})
 
@@ -139,9 +144,13 @@ class ListExtensionsTool(llm.Tool):
 
     name = "list_extensions"
     description = (
-        "Use when the user asks which optional JARVIS extensions, Erweiterungen, "
-        "or optional abilities are installed or currently available. This does "
-        "not list planned, future, or idea-only extensions."
+        "Use for any question about Erweiterungen, Extensions, optionale "
+        "Fähigkeiten, optional abilities, or optionale Fähigkeitserweiterungen. "
+        "Lists installed or currently available optional JARVIS extensions "
+        "only. This is the correct tool for 'Welche Erweiterungen hast du?', "
+        "'Welche Extensions sind installiert?', and 'Welche optionalen "
+        "Fähigkeiten hast du?'. Do not use list_project_modules for these "
+        "questions."
     )
     parameters = vol.Schema({})
 
