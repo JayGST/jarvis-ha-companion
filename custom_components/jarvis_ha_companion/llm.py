@@ -27,6 +27,13 @@ API_PROMPT = (
     "and do not invent capabilities. "
     "Use list_capabilities for questions about what JARVIS can do or "
     "which Capability API functions are implemented. "
+    "Use list_extensions for questions about installed or available optional "
+    "JARVIS extensions, Erweiterungen, or optional abilities. "
+    "list_extensions currently lists only installed/available extensions. "
+    "Use list_project_modules for questions about modules, components, "
+    "packages, architecture, project structure, or implementation overview. "
+    "list_project_modules is deprecated and legacy; do not use it for "
+    "extension questions. "
     "Use inspect_project_module for questions about one specific module, "
     "feature, or capability."
 )
@@ -38,11 +45,9 @@ class JarvisLLMAPI(llm.API):
     def __init__(
         self,
         hass: HomeAssistant,
-        api_id: str,
-        name: str,
         client: JarvisAddonClient,
     ) -> None:
-        super().__init__(hass, api_id, name)
+        super().__init__(hass=hass, id=API_ID, name=API_NAME)
         self._client = client
 
     async def async_get_api_instance(
@@ -57,6 +62,8 @@ class JarvisLLMAPI(llm.API):
             tools=[
                 InspectProjectModuleTool(self._client),
                 ListCapabilitiesTool(self._client),
+                ListExtensionsTool(self._client),
+                ListProjectModulesTool(self._client),
             ],
         )
 
@@ -98,6 +105,62 @@ class InspectProjectModuleTool(llm.Tool):
         )
 
 
+class ListProjectModulesTool(llm.Tool):
+    """Tool for listing known Project JARVIS modules."""
+
+    name = "list_project_modules"
+    description = (
+        "Use when the user asks which Project JARVIS modules, components, "
+        "packages, architecture elements, project-structure items, or "
+        "implementation units exist or are planned. This is a deprecated "
+        "legacy tool. Do not use for extension questions or general questions "
+        "about what JARVIS can do as an assistant."
+    )
+    parameters = vol.Schema({})
+
+    def __init__(self, client: JarvisAddonClient) -> None:
+        self._client = client
+
+    async def async_call(
+        self,
+        hass: HomeAssistant,
+        tool_input: llm.ToolInput,
+        llm_context: llm.LLMContext,
+    ) -> JsonObjectType:
+        """Call the JARVIS Add-on list_project_modules capability."""
+        return await self._client.execute_capability(
+            capability="list_project_modules",
+            parameters={},
+        )
+
+
+class ListExtensionsTool(llm.Tool):
+    """Tool for listing installed optional JARVIS extensions."""
+
+    name = "list_extensions"
+    description = (
+        "Use when the user asks which optional JARVIS extensions, Erweiterungen, "
+        "or optional abilities are installed or currently available. This does "
+        "not list planned, future, or idea-only extensions."
+    )
+    parameters = vol.Schema({})
+
+    def __init__(self, client: JarvisAddonClient) -> None:
+        self._client = client
+
+    async def async_call(
+        self,
+        hass: HomeAssistant,
+        tool_input: llm.ToolInput,
+        llm_context: llm.LLMContext,
+    ) -> JsonObjectType:
+        """Call the JARVIS Add-on list_extensions capability."""
+        return await self._client.execute_capability(
+            capability="list_extensions",
+            parameters={},
+        )
+
+
 class ListCapabilitiesTool(llm.Tool):
     """Tool for listing implemented JARVIS capabilities."""
 
@@ -133,5 +196,5 @@ def async_setup_llm_api(
     """Register the JARVIS LLM API with Home Assistant."""
     return llm.async_register_api(
         hass,
-        JarvisLLMAPI(hass, API_ID, API_NAME, client),
+        JarvisLLMAPI(hass, client),
     )
