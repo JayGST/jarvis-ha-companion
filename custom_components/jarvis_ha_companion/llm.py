@@ -17,7 +17,10 @@ API_ID = f"{DOMAIN}.capabilities"
 API_NAME = "JARVIS"
 API_PROMPT = (
     "JARVIS exposes project-specific capabilities through tools. "
-    "Use these tools when a user asks about Project JARVIS capabilities."
+    "Use list_capabilities for questions about what JARVIS can do or "
+    "which Capability API functions are implemented. "
+    "Use inspect_project_module for questions about one specific module, "
+    "feature, or capability."
 )
 
 
@@ -55,8 +58,11 @@ class InspectProjectModuleTool(llm.Tool):
 
     name = "inspect_project_module"
     description = (
-        "Checks whether a Project JARVIS module or capability is installed, "
-        "planned, documented, historical, idea-only, or not found."
+        "Use when the user asks about one specific Project JARVIS module, "
+        "feature, or capability, for example whether the Windows Agent is "
+        "implemented or what the Startup Report module is. Checks whether "
+        "that single item is installed, planned, documented, historical, "
+        "idea-only, or not found."
     )
     parameters = vol.Schema(
         {
@@ -88,7 +94,12 @@ class ListCapabilitiesTool(llm.Tool):
     """Tool for listing implemented JARVIS capabilities."""
 
     name = "list_capabilities"
-    description = "Lists currently implemented Project JARVIS capabilities."
+    description = (
+        "Use when the user asks what JARVIS can do, which abilities it has, "
+        "or which Capability API functions are currently implemented. This "
+        "lists executable JARVIS capabilities, not architecture modules or "
+        "project structure."
+    )
     parameters = vol.Schema({})
 
     def __init__(self, client: JarvisAddonClient) -> None:
