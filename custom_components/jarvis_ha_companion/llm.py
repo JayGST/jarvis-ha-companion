@@ -43,7 +43,10 @@ class JarvisLLMAPI(llm.API):
             api=self,
             api_prompt=API_PROMPT,
             llm_context=llm_context,
-            tools=[InspectProjectModuleTool(self._client)],
+            tools=[
+                InspectProjectModuleTool(self._client),
+                ListCapabilitiesTool(self._client),
+            ],
         )
 
 
@@ -78,6 +81,29 @@ class InspectProjectModuleTool(llm.Tool):
             parameters={
                 "module_name": module_name,
             },
+        )
+
+
+class ListCapabilitiesTool(llm.Tool):
+    """Tool for listing implemented JARVIS capabilities."""
+
+    name = "list_capabilities"
+    description = "Lists currently implemented Project JARVIS capabilities."
+    parameters = vol.Schema({})
+
+    def __init__(self, client: JarvisAddonClient) -> None:
+        self._client = client
+
+    async def async_call(
+        self,
+        hass: HomeAssistant,
+        tool_input: llm.ToolInput,
+        llm_context: llm.LLMContext,
+    ) -> JsonObjectType:
+        """Call the JARVIS Add-on list_capabilities capability."""
+        return await self._client.execute_capability(
+            capability="list_capabilities",
+            parameters={},
         )
 
 
