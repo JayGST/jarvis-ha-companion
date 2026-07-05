@@ -25,20 +25,21 @@ API_PROMPT = (
     "also include JARVIS project capabilities when the user asks about "
     "JARVIS itself. Keep answers short, clear, source-backed when possible, "
     "and do not invent capabilities. "
-    "Use list_capabilities for questions about what JARVIS can do or "
-    "which Capability API functions are implemented. "
+    "Use the user-facing taxonomy Capabilities, Extensions, Ideas, Roadmap, "
+    "and Decisions. Do not present modules as a separate user-facing concept. "
+    "Use list_capabilities for questions about what JARVIS can do, which "
+    "abilities or capabilities it has, which Capability API functions are "
+    "implemented, or user-facing module questions such as 'Welche Module "
+    "hast du?' unless the user explicitly asks about implementation, code, "
+    "repository layout, or architecture. "
     "Always use list_extensions for questions containing or meaning "
     "Erweiterungen, Extensions, optionale Fähigkeiten, optional abilities, "
-    "or optionale Fähigkeitserweiterungen. "
-    "list_extensions lists only installed or currently available optional "
-    "JARVIS extensions. "
-    "Use list_project_modules for questions about modules, components, "
-    "packages, architecture, technical project structure, or implementation "
-    "overview only. list_project_modules is deprecated and legacy. Never use "
-    "list_project_modules for Erweiterungen, Extensions, optionale "
-    "Fähigkeiten, optional abilities, or extension questions. "
-    "Use inspect_project_module for questions about one specific module, "
-    "feature, or capability."
+    "or optionale Fähigkeitserweiterungen. list_extensions lists only "
+    "installed or currently available optional JARVIS extensions. "
+    "Use inspect_project_module for questions about one specific project "
+    "item, feature, or capability, and for explicit implementation, "
+    "architecture, code structure, repository layout, or software "
+    "architecture questions."
 )
 
 
@@ -66,21 +67,21 @@ class JarvisLLMAPI(llm.API):
                 InspectProjectModuleTool(self._client),
                 ListCapabilitiesTool(self._client),
                 ListExtensionsTool(self._client),
-                ListProjectModulesTool(self._client),
             ],
         )
 
 
 class InspectProjectModuleTool(llm.Tool):
-    """Tool for Project JARVIS module inspection."""
+    """Tool for specific Project JARVIS source inspection."""
 
     name = "inspect_project_module"
     description = (
-        "Use when the user asks about one specific Project JARVIS module, "
-        "feature, or capability, for example whether the Windows Agent is "
-        "implemented or what the Startup Report module is. Checks whether "
-        "that single item is installed, planned, documented, historical, "
-        "idea-only, or not found."
+        "Use when the user asks about one specific Project JARVIS item, "
+        "feature, capability, implementation detail, architecture element, "
+        "code structure, repository layout, or software architecture question. "
+        "Examples: 'Ist der Windows Agent implementiert?' or 'Wie ist deine "
+        "Architektur aufgebaut?'. Checks whether that single item is installed, "
+        "planned, documented, historical, idea-only, or not found."
     )
     parameters = vol.Schema(
         {
@@ -108,37 +109,6 @@ class InspectProjectModuleTool(llm.Tool):
         )
 
 
-class ListProjectModulesTool(llm.Tool):
-    """Legacy tool for listing technical Project JARVIS modules."""
-
-    name = "list_project_modules"
-    description = (
-        "Deprecated legacy tool. Use only for technical Project JARVIS "
-        "structure questions about modules, components, packages, architecture "
-        "elements, project-structure items, or implementation units. Never use "
-        "for Erweiterungen, Extensions, optionale Fähigkeiten, optional "
-        "abilities, optionale Fähigkeitserweiterungen, or any extension "
-        "question. For extension questions use list_extensions instead. For "
-        "general ability questions use list_capabilities instead."
-    )
-    parameters = vol.Schema({})
-
-    def __init__(self, client: JarvisAddonClient) -> None:
-        self._client = client
-
-    async def async_call(
-        self,
-        hass: HomeAssistant,
-        tool_input: llm.ToolInput,
-        llm_context: llm.LLMContext,
-    ) -> JsonObjectType:
-        """Call the JARVIS Add-on list_project_modules capability."""
-        return await self._client.execute_capability(
-            capability="list_project_modules",
-            parameters={},
-        )
-
-
 class ListExtensionsTool(llm.Tool):
     """Tool for listing installed optional JARVIS extensions."""
 
@@ -149,8 +119,7 @@ class ListExtensionsTool(llm.Tool):
         "Lists installed or currently available optional JARVIS extensions "
         "only. This is the correct tool for 'Welche Erweiterungen hast du?', "
         "'Welche Extensions sind installiert?', and 'Welche optionalen "
-        "Fähigkeiten hast du?'. Do not use list_project_modules for these "
-        "questions."
+        "Fähigkeiten hast du?'."
     )
     parameters = vol.Schema({})
 
@@ -175,10 +144,12 @@ class ListCapabilitiesTool(llm.Tool):
 
     name = "list_capabilities"
     description = (
-        "Use when the user asks what JARVIS can do, which abilities it has, "
-        "or which Capability API functions are currently implemented. This "
-        "lists executable JARVIS capabilities, not architecture modules or "
-        "project structure."
+        "Use when the user asks what JARVIS can do, which abilities or "
+        "capabilities it has, which Capability API functions are currently "
+        "implemented, or user-facing module questions such as 'Welche Module "
+        "hast du?'. This lists executable JARVIS capabilities. Do not use for "
+        "explicit implementation, architecture, code, or repository layout "
+        "questions; use inspect_project_module for those."
     )
     parameters = vol.Schema({})
 
