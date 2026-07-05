@@ -74,6 +74,8 @@ class JarvisLLMAPI(llm.API):
                 ListCapabilitiesTool(self._client),
                 ListExtensionsTool(self._client),
                 GetIdeasTool(self._client),
+                GetRoadmapItemsTool(self._client),
+                FindDecisionTool(self._client),
             ],
         )
 
@@ -169,6 +171,60 @@ class GetIdeasTool(llm.Tool):
         """Call the JARVIS Add-on get_ideas capability."""
         return await self._client.execute_capability(
             capability="get_ideas",
+            parameters={},
+        )
+
+
+class GetRoadmapItemsTool(llm.Tool):
+    """Tool for retrieving documented JARVIS roadmap items."""
+
+    name = "get_roadmap_items"
+    description = (
+        "Use for questions about planned roadmap work, roadmap items, "
+        "upcoming work, or planned features. Returns the documented JARVIS "
+        "roadmap items only."
+    )
+    parameters = vol.Schema({})
+
+    def __init__(self, client: JarvisAddonClient) -> None:
+        self._client = client
+
+    async def async_call(
+        self,
+        hass: HomeAssistant,
+        tool_input: llm.ToolInput,
+        llm_context: llm.LLMContext,
+    ) -> JsonObjectType:
+        """Call the JARVIS Add-on get_roadmap_items capability."""
+        return await self._client.execute_capability(
+            capability="get_roadmap_items",
+            parameters={},
+        )
+
+
+class FindDecisionTool(llm.Tool):
+    """Tool for retrieving accepted JARVIS architecture decisions."""
+
+    name = "find_decision"
+    description = (
+        "Use for questions about accepted architecture decisions, ADRs, or "
+        "documented design decisions. Returns the relevant JARVIS decision "
+        "record(s)."
+    )
+    parameters = vol.Schema({})
+
+    def __init__(self, client: JarvisAddonClient) -> None:
+        self._client = client
+
+    async def async_call(
+        self,
+        hass: HomeAssistant,
+        tool_input: llm.ToolInput,
+        llm_context: llm.LLMContext,
+    ) -> JsonObjectType:
+        """Call the JARVIS Add-on find_decision capability."""
+        return await self._client.execute_capability(
+            capability="find_decision",
             parameters={},
         )
 
