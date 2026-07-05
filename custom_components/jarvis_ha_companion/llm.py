@@ -36,6 +36,12 @@ API_PROMPT = (
     "Erweiterungen, Extensions, optionale Fähigkeiten, optional abilities, "
     "or optionale Fähigkeitserweiterungen. list_extensions lists only "
     "installed or currently available optional JARVIS extensions. "
+    "Use get_ideas for questions about ideas, Ideensammlung, documented ideas, "
+    "future ideas, or uncommitted possibilities. Do NOT use get_ideas for "
+    "implemented capabilities, installed extensions, roadmap items, or ADR "
+    "decisions. get_ideas lists ideas only. "
+    "Use get_roadmap_items for planned roadmap work. "
+    "Use find_decision for accepted architecture decisions. "
     "Use inspect_project_module for questions about one specific project "
     "item, feature, or capability, and for explicit implementation, "
     "architecture, code structure, repository layout, or software "
@@ -67,6 +73,7 @@ class JarvisLLMAPI(llm.API):
                 InspectProjectModuleTool(self._client),
                 ListCapabilitiesTool(self._client),
                 ListExtensionsTool(self._client),
+                GetIdeasTool(self._client),
             ],
         )
 
@@ -135,6 +142,33 @@ class ListExtensionsTool(llm.Tool):
         """Call the JARVIS Add-on list_extensions capability."""
         return await self._client.execute_capability(
             capability="list_extensions",
+            parameters={},
+        )
+
+
+class GetIdeasTool(llm.Tool):
+    """Tool for retrieving documented JARVIS ideas."""
+
+    name = "get_ideas"
+    description = (
+        "Use for questions about ideas, Ideensammlung, documented ideas, "
+        "future ideas, or uncommitted possibilities. Returns the documented "
+        "JARVIS ideas only."
+    )
+    parameters = vol.Schema({})
+
+    def __init__(self, client: JarvisAddonClient) -> None:
+        self._client = client
+
+    async def async_call(
+        self,
+        hass: HomeAssistant,
+        tool_input: llm.ToolInput,
+        llm_context: llm.LLMContext,
+    ) -> JsonObjectType:
+        """Call the JARVIS Add-on get_ideas capability."""
+        return await self._client.execute_capability(
+            capability="get_ideas",
             parameters={},
         )
 
