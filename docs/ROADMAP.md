@@ -2,24 +2,52 @@
 
 ## Genesis
 
+Status:
+
+Completed
+
 Goal:
 
-Create the minimal Home Assistant companion integration needed to expose the first JARVIS capability to Home Assistant Assist and Claude.
+Create the minimal Home Assistant companion integration needed to expose JARVIS capabilities to Home Assistant Assist and Claude.
 
-Steps:
+Completed:
 
 1. Register custom LLM API.
-2. Add `inspect_project_module` tool.
-3. Connect to Add-on HTTP Capability API.
-4. End-to-end test.
+2. Add config-entry setup.
+3. Add `inspect_project_module` tool.
+4. Connect to Add-on HTTP Capability API through `JarvisAddonClient`.
+5. Complete end-to-end testing with the Project-JARVIS Add-on.
+6. Add the current Project Knowledge tool set.
+
+Current implemented tools:
+
+* `inspect_project_module`
+* `list_capabilities`
+* `list_extensions`
+* `get_ideas`
+* `get_roadmap_items`
+* `find_decision`
+
+---
+
+## Current Focus
+
+Keep the Companion Integration thin and aligned with the Project-JARVIS Capability API.
+
+Tool descriptions and prompt guidance should follow the current Project JARVIS taxonomy:
+
+* Capabilities
+* Extensions
+* Ideas
+* Roadmap
+* Decisions
 
 ---
 
 ## Deferred
 
-* Additional LLM tools.
-* Configuration flow.
 * Advanced error mapping.
 * Retry behavior.
 * Streaming responses.
-* Memory, finance, Windows and context tools.
+* Additional future tools for memory, finance, Windows and context capabilities.
+* Automatic Add-on discovery or connection validation during setup.

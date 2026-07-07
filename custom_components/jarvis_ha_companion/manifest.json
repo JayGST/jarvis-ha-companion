@@ -4,7 +4,7 @@
   "codeowners": [],
   "config_flow": true,
   "dependencies": [],
-  "documentation": "https://github.com/jarvis/jarvis-ha-companion",
+  "documentation": "https://github.com/JayGST/jarvis-ha-companion",
   "integration_type": "service",
   "iot_class": "local_push",
   "requirements": [],
