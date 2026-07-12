@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import logging
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
-from .addon_client import JarvisAddonClient
+from .addon_client import JarvisAddonClient, JarvisAddonClientError
 from .const import CONF_BASE_URL, DOMAIN
 from .llm import async_setup_llm_api
+
+_LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(
@@ -19,10 +23,24 @@ async def async_setup_entry(
         hass=hass,
         base_url=entry.data[CONF_BASE_URL],
     )
-    unregister = async_setup_llm_api(hass, client)
+
+    identity_prompt = None
+
+    try:
+        identity = await client.get_identity_prompt()
+        identity_prompt = identity.prompt
+    except JarvisAddonClientError as error:
+        _LOGGER.warning(
+            "Unable to load runtime JARVIS identity from Project-JARVIS; "
+            "using neutral companion fallback prompt: %s",
+            error,
+        )
+
+    unregister = async_setup_llm_api(hass, client, identity_prompt)
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
         "client": client,
+        "identity_prompt": identity_prompt,
         "unregister_llm_api": unregister,
     }
 

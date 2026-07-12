@@ -8,6 +8,8 @@ The Companion Integration is the Home Assistant LLM adapter for Project JARVIS.
 
 It exposes JARVIS capabilities to Home Assistant Assist / Claude while keeping all business logic inside the Project-JARVIS Add-on.
 
+Project-JARVIS owns the canonical JARVIS identity. The Companion Integration consumes that identity at runtime and does not keep a duplicate identity summary.
+
 ---
 
 # System Flow
@@ -47,6 +49,8 @@ Forwards tool calls to the JARVIS Add-on through `JarvisAddonClient`.
 
 Returns structured Add-on responses without interpreting Project Knowledge results.
 
+Fetches and caches the runtime identity prompt during integration setup so it can be injected into the Home Assistant LLM API prompt.
+
 Contains no JARVIS business logic.
 
 ## JarvisAddonClient
@@ -56,6 +60,8 @@ Owns the minimal HTTP client boundary to the Project-JARVIS Add-on Capability AP
 It sends the Capability API request envelope and returns the structured Add-on response.
 
 It does not interpret capability results.
+
+For `get_identity_prompt`, it validates the response shape and returns the runtime prompt metadata without rewriting the identity.
 
 ## HTTP Capability API
 
@@ -68,6 +74,28 @@ The current transport is HTTP.
 Owns all JARVIS business logic and capability execution.
 
 Project Knowledge capabilities are backed by ProjectKnowledgeService inside the Add-on.
+
+The `get_identity_prompt` capability returns the canonical identity prompt from Project-JARVIS.
+
+---
+
+# Prompt Composition
+
+Runtime Identity Integration is complete.
+
+The Home Assistant LLM API prompt is assembled in a fixed order:
+
+1. Runtime JARVIS identity returned by Project-JARVIS.
+2. Companion/API tool instructions.
+3. Capability-specific guidance.
+
+The Companion owns only the technical tool instructions and routing guidance. It does not own JARVIS personality rules, user preferences, or dynamic speech settings.
+
+If the identity capability is unavailable, the Companion logs a warning and uses a short neutral fallback. It does not restore a copied static identity summary.
+
+Identity refresh currently occurs on Home Assistant integration reload or restart. There is no background polling.
+
+The Companion caches only the runtime identity text returned during setup. It does not transform, summarize, or reinterpret the identity supplied by Project-JARVIS.
 
 ---
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 from typing import Any
 
 from aiohttp import ClientError
@@ -58,6 +59,46 @@ class JarvisAddonClient:
             raise JarvisAddonClientError("JARVIS Add-on returned an invalid response.")
 
         return payload
+
+    async def get_identity_prompt(self) -> IdentityPrompt:
+        """Fetch the canonical runtime JARVIS identity prompt from the Add-on."""
+        payload = await self.execute_capability(
+            capability="get_identity_prompt",
+            parameters={},
+        )
+
+        result = payload.get("result")
+
+        if not isinstance(result, dict):
+            raise JarvisAddonClientError(
+                "JARVIS Add-on returned an invalid identity response."
+            )
+
+        prompt = result.get("prompt")
+        source = result.get("source")
+        content_sha256 = result.get("content_sha256")
+
+        if not isinstance(prompt, str) or not prompt.strip():
+            raise JarvisAddonClientError(
+                "JARVIS Add-on returned an invalid identity prompt."
+            )
+
+        return IdentityPrompt(
+            prompt=prompt,
+            source=source if isinstance(source, str) else None,
+            content_sha256=content_sha256
+            if isinstance(content_sha256, str)
+            else None,
+        )
+
+
+@dataclass(frozen=True)
+class IdentityPrompt:
+    """Canonical JARVIS identity prompt metadata returned by the Add-on."""
+
+    prompt: str
+    source: str | None = None
+    content_sha256: str | None = None
 
 
 class JarvisAddonClientError(Exception):

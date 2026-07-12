@@ -1,4 +1,4 @@
-# JARVIS Home Assistant Companion
+﻿# JARVIS Home Assistant Companion
 
 ## Purpose
 
@@ -12,17 +12,7 @@ This repository is **not** a Home Assistant Add-on.
 
 The Project-JARVIS Add-on must be installed and running separately because it owns the backend Capability API and all JARVIS business logic.
 
----
-
-## Current Status
-
-The Companion Integration is implemented as a Home Assistant custom integration with config-entry setup.
-
-It registers a JARVIS LLM API and exposes Project Knowledge tools to Home Assistant Assist / Claude.
-
-The integration communicates with the Project-JARVIS Add-on through the Add-on HTTP Capability API.
-
-It does not execute Project Knowledge logic itself.
+Project-JARVIS also owns the canonical JARVIS identity prompt. The Companion Integration fetches that runtime identity through the `get_identity_prompt` capability and injects it into the Home Assistant LLM API prompt.
 
 ---
 
@@ -43,28 +33,31 @@ Home Assistant Assist / Claude
   -> JARVIS Add-on HTTP Capability API
 ```
 
+The Companion may cache and inject the runtime identity prompt returned by Project-JARVIS, but it must not maintain a second full copy of the JARVIS identity or personality rules.
+
+The Companion owns only technical Home Assistant tool instructions and capability routing guidance.
+
 ---
 
-## Current Project Knowledge Tools
+## Runtime Identity
 
-The Companion Integration currently registers these Project Knowledge LLM tools:
+Runtime Identity Integration is complete.
 
-* `inspect_project_module` - inspect one specific project item, feature, capability or implementation detail.
-* `list_capabilities` - list currently implemented JARVIS capabilities.
-* `list_extensions` - list installed optional JARVIS extensions.
-* `get_ideas` - list documented ideas from the JARVIS idea collection.
-* `get_roadmap_items` - list documented roadmap items.
-* `find_decision` - find accepted architecture decisions.
+During integration setup, the Companion calls the Add-on Capability API:
 
-User-facing questions should prefer the current taxonomy:
+```text
+capability: get_identity_prompt
+```
 
-* Capabilities
-* Extensions
-* Ideas
-* Roadmap
-* Decisions
+The returned prompt is cached in memory and used when registering the Home Assistant LLM API.
 
-The Companion should not present software modules as the preferred user-facing concept.
+The cached runtime prompt is injected into the Home Assistant LLM API prompt before Companion-specific tool instructions.
+
+Identity refresh currently happens on Home Assistant integration reload or restart. There is no background polling.
+
+If Project-JARVIS or `get_identity_prompt` is unavailable, setup still completes. The Companion logs a warning and uses a short neutral fallback that contains only essential tool instructions.
+
+User preferences and dynamic speech settings are not implemented yet.
 
 ---
 
@@ -111,7 +104,7 @@ Do not include the endpoint path. The integration appends:
 
 ---
 
-## Test Checklist
+## First Test Checklist
 
 Before testing the conversation flow:
 
@@ -120,16 +113,11 @@ Before testing the conversation flow:
 3. Capability API is reachable from Home Assistant.
 4. `base_url` is configured in the companion integration.
 5. Home Assistant Assist uses an LLM conversation agent such as Claude.
-6. The JARVIS LLM API is available to the conversation agent.
-7. The current Project Knowledge tools are visible to the LLM agent.
-8. Ask source-backed Project Knowledge questions, for example:
+6. The `inspect_project_module` tool is visible to the LLM agent.
+7. Ask a project knowledge question, for example:
 
 ```text
-Welche F?higkeiten hast du?
-Welche Erweiterungen hast du?
-Welche Ideen sind dokumentiert?
-Was steht als n?chstes auf der Roadmap?
-Welche Entscheidung gibt es zur JARVIS Identit?t?
+Is the stock module installed?
 ```
 
 Expected behavior:
@@ -137,18 +125,15 @@ Expected behavior:
 * Home Assistant routes the tool call to the companion integration.
 * The companion integration forwards the request to the Add-on Capability API.
 * The Add-on returns the structured ProjectKnowledgeService result.
-* The companion integration returns the Add-on response without adding business logic.
+* The companion integration does not interpret the result itself.
 
 ---
 
-## Current Scope
+## Genesis Scope
 
-The current implementation provides:
+The Genesis implementation focuses on:
 
-1. Home Assistant config-entry setup.
-2. JARVIS LLM API registration.
-3. Project Knowledge LLM tool registration.
-4. HTTP forwarding through `JarvisAddonClient`.
-5. Structured response passthrough from the Project-JARVIS Add-on.
-
-Deferred work includes advanced error mapping, retry behavior, streaming responses and future tools for memory, finance, Windows and context capabilities.
+1. Registering a custom Home Assistant LLM API.
+2. Adding the first tool, `inspect_project_module`.
+3. Forwarding the tool request to the JARVIS Add-on HTTP Capability API.
+4. Performing the first end-to-end conversation test.

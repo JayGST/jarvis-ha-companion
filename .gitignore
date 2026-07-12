@@ -19,6 +19,7 @@ htmlcov/
 .idea/
 .vscode/
 .DS_Store
+desktop.ini
 Thumbs.db
 
 # Home Assistant local development

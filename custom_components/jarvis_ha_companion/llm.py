@@ -15,16 +15,19 @@ from .const import DOMAIN
 
 API_ID = f"{DOMAIN}.capabilities"
 API_NAME = "JARVIS"
-API_PROMPT = (
-    "You are JARVIS: a calm, precise, reliable personal assistant with a "
-    "composed and subtly dry communication style. Answer as JARVIS, not as "
-    "a generic Home Assistant assistant. Home Assistant is one integration "
-    "and interface of JARVIS; it is not JARVIS' identity. When asked who you "
-    "are, what you can do, or which abilities you have, answer from the "
-    "perspective of JARVIS. Mention smart-home abilities when relevant, but "
-    "also include JARVIS project capabilities when the user asks about "
-    "JARVIS itself. Keep answers short, clear, source-backed when possible, "
-    "and do not invent capabilities. "
+FALLBACK_IDENTITY_PROMPT = (
+    "Runtime JARVIS identity is currently unavailable from Project-JARVIS. "
+    "Do not invent identity, personality, or capability details."
+)
+COMPANION_TOOL_INSTRUCTIONS = (
+    "The Home Assistant Companion is a thin adapter. Use its LLM tools to "
+    "forward capability requests to Project-JARVIS. Do not treat the "
+    "Companion as the source of JARVIS business logic, memory, project "
+    "knowledge, finance, Windows, context, or personality behavior. Keep "
+    "responses grounded in the runtime identity and tool results. Do not "
+    "invent capabilities."
+)
+CAPABILITY_GUIDANCE = (
     "Use the user-facing taxonomy Capabilities, Extensions, Ideas, Roadmap, "
     "and Decisions. Do not present modules as a separate user-facing concept. "
     "Use list_capabilities for questions about what JARVIS can do, which "
@@ -33,11 +36,11 @@ API_PROMPT = (
     "hast du?' unless the user explicitly asks about implementation, code, "
     "repository layout, or architecture. "
     "Always use list_extensions for questions containing or meaning "
-    "Erweiterungen, Extensions, optionale Fähigkeiten, optional abilities, "
-    "or optionale Fähigkeitserweiterungen. list_extensions lists only "
+    "Erweiterungen, Extensions, optionale Faehigkeiten, optional abilities, "
+    "or optionale Faehigkeitserweiterungen. list_extensions lists only "
     "installed or currently available optional JARVIS extensions. "
     "Use get_ideas for questions about ideas, Ideensammlung, documented ideas, "
-    "future ideas, or uncommitted possibilities. Do NOT use get_ideas for "
+    "future ideas, or uncommitted possibilities. Do not use get_ideas for "
     "implemented capabilities, installed extensions, roadmap items, or ADR "
     "decisions. get_ideas lists ideas only. "
     "Use get_roadmap_items for planned roadmap work. "
@@ -56,9 +59,11 @@ class JarvisLLMAPI(llm.API):
         self,
         hass: HomeAssistant,
         client: JarvisAddonClient,
+        identity_prompt: str | None,
     ) -> None:
         super().__init__(hass=hass, id=API_ID, name=API_NAME)
         self._client = client
+        self._api_prompt = build_api_prompt(identity_prompt)
 
     async def async_get_api_instance(
         self,
@@ -67,7 +72,7 @@ class JarvisLLMAPI(llm.API):
         """Return the JARVIS LLM API instance."""
         return llm.APIInstance(
             api=self,
-            api_prompt=API_PROMPT,
+            api_prompt=self._api_prompt,
             llm_context=llm_context,
             tools=[
                 InspectProjectModuleTool(self._client),
@@ -124,11 +129,11 @@ class ListExtensionsTool(llm.Tool):
     name = "list_extensions"
     description = (
         "Use for any question about Erweiterungen, Extensions, optionale "
-        "Fähigkeiten, optional abilities, or optionale Fähigkeitserweiterungen. "
+        "Faehigkeiten, optional abilities, or optionale Faehigkeitserweiterungen. "
         "Lists installed or currently available optional JARVIS extensions "
         "only. This is the correct tool for 'Welche Erweiterungen hast du?', "
         "'Welche Extensions sind installiert?', and 'Welche optionalen "
-        "Fähigkeiten hast du?'."
+        "Faehigkeiten hast du?'."
     )
     parameters = vol.Schema({})
 
@@ -262,9 +267,27 @@ class ListCapabilitiesTool(llm.Tool):
 def async_setup_llm_api(
     hass: HomeAssistant,
     client: JarvisAddonClient,
+    identity_prompt: str | None,
 ) -> Callable[[], None]:
     """Register the JARVIS LLM API with Home Assistant."""
     return llm.async_register_api(
         hass,
-        JarvisLLMAPI(hass, client),
+        JarvisLLMAPI(hass, client, identity_prompt),
+    )
+
+
+def build_api_prompt(identity_prompt: str | None) -> str:
+    """Build the LLM API prompt in the documented order."""
+    runtime_identity = (
+        identity_prompt.strip()
+        if identity_prompt is not None and identity_prompt.strip()
+        else FALLBACK_IDENTITY_PROMPT
+    )
+
+    return "\n\n".join(
+        (
+            runtime_identity,
+            COMPANION_TOOL_INSTRUCTIONS,
+            CAPABILITY_GUIDANCE,
+        )
     )
