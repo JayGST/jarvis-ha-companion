@@ -39,6 +39,22 @@ The Companion owns only technical Home Assistant tool instructions and capabilit
 
 ---
 
+## Current LLM Tools
+
+The Companion Integration currently registers these Home Assistant LLM tools:
+
+* `inspect_project_module` - forwards specific Project JARVIS inspection questions to Project-JARVIS.
+* `list_capabilities` - forwards implemented capability listing requests to Project-JARVIS.
+* `list_extensions` - forwards installed optional extension listing requests to Project-JARVIS.
+* `get_ideas` - forwards documented idea requests to Project-JARVIS.
+* `get_roadmap_items` - forwards roadmap item requests to Project-JARVIS.
+* `find_decision` - forwards accepted architecture decision requests to Project-JARVIS.
+* `get_runtime_status` - read-only runtime reachability check for questions such as whether the Windows Agent or desktop runtime is online.
+
+Each tool uses a fixed backend capability mapping in the Companion and returns the Project-JARVIS Capability API response. Project-JARVIS owns routing, orchestration and execution.
+
+---
+
 ## Runtime Identity
 
 Runtime Identity Integration is complete.

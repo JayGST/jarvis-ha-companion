@@ -13,6 +13,7 @@ from custom_components.jarvis_ha_companion.llm import (
     FindDecisionTool,
     GetIdeasTool,
     GetRoadmapItemsTool,
+    GetRuntimeStatusTool,
     InspectProjectModuleTool,
     JarvisLLMAPI,
     ListCapabilitiesTool,
@@ -92,6 +93,7 @@ async def test_registered_llm_tools_forward_to_existing_capabilities() -> None:
         "get_ideas",
         "get_roadmap_items",
         "find_decision",
+        "get_runtime_status",
     }
     api = JarvisLLMAPI(object(), client, "Canonical runtime identity.")
     instance = await api.async_get_api_instance(llm.LLMContext())
@@ -128,6 +130,11 @@ async def test_registered_llm_tools_forward_to_existing_capabilities() -> None:
         llm.ToolInput({}),
         llm.LLMContext(),
     )
+    runtime_result = await GetRuntimeStatusTool(client).async_call(
+        object(),
+        llm.ToolInput({}),
+        llm.LLMContext(),
+    )
 
     assert inspect_result["result"]["capability"] == "inspect_project_module"
     assert capabilities_result["result"]["capability"] == "list_capabilities"
@@ -135,6 +142,7 @@ async def test_registered_llm_tools_forward_to_existing_capabilities() -> None:
     assert ideas_result["result"]["capability"] == "get_ideas"
     assert roadmap_result["result"]["capability"] == "get_roadmap_items"
     assert decision_result["result"]["capability"] == "find_decision"
+    assert runtime_result["result"]["capability"] == "system.health"
     assert client.calls == [
         ("inspect_project_module", {"module_name": "Windows Agent"}),
         ("list_capabilities", {}),
@@ -142,4 +150,33 @@ async def test_registered_llm_tools_forward_to_existing_capabilities() -> None:
         ("get_ideas", {}),
         ("get_roadmap_items", {}),
         ("find_decision", {}),
+        ("system.health", {}),
     ]
+
+
+@pytest.mark.asyncio
+async def test_runtime_status_tool_has_no_parameters_and_fixed_mapping() -> None:
+    """Runtime status cannot accept user-controlled capabilities or parameters."""
+    client = FakeClient()
+    tool = GetRuntimeStatusTool(client)
+
+    result = await tool.async_call(
+        object(),
+        llm.ToolInput(
+            {
+                "capability": "arbitrary.capability",
+                "parameters": {"write": True},
+                "provider": "windows-agent",
+            }
+        ),
+        llm.LLMContext(),
+    )
+
+    assert tool.parameters.schema == {}
+    assert client.calls == [("system.health", {})]
+    assert result == {
+        "result": {
+            "capability": "system.health",
+            "parameters": {},
+        }
+    }

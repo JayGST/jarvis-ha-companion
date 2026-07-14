@@ -45,6 +45,8 @@ CAPABILITY_GUIDANCE = (
     "decisions. get_ideas lists ideas only. "
     "Use get_roadmap_items for planned roadmap work. "
     "Use find_decision for accepted architecture decisions. "
+    "Use get_runtime_status when the user asks whether the Windows Agent, "
+    "desktop runtime, or runtime connection is currently reachable or online. "
     "Use inspect_project_module for questions about one specific project "
     "item, feature, or capability, and for explicit implementation, "
     "architecture, code structure, repository layout, or software "
@@ -81,6 +83,7 @@ class JarvisLLMAPI(llm.API):
                 GetIdeasTool(self._client),
                 GetRoadmapItemsTool(self._client),
                 FindDecisionTool(self._client),
+                GetRuntimeStatusTool(self._client),
             ],
         )
 
@@ -260,6 +263,33 @@ class ListCapabilitiesTool(llm.Tool):
         """Call the JARVIS Add-on list_capabilities capability."""
         return await self._client.execute_capability(
             capability="list_capabilities",
+            parameters={},
+        )
+
+
+class GetRuntimeStatusTool(llm.Tool):
+    """Tool for checking whether the desktop runtime is reachable."""
+
+    name = "get_runtime_status"
+    description = (
+        "Use when the user asks whether the Windows Agent is reachable, what "
+        "the runtime status is, whether JARVIS can reach the Windows Agent, "
+        "or whether the desktop runtime is online. This is read-only."
+    )
+    parameters = vol.Schema({})
+
+    def __init__(self, client: JarvisAddonClient) -> None:
+        self._client = client
+
+    async def async_call(
+        self,
+        hass: HomeAssistant,
+        tool_input: llm.ToolInput,
+        llm_context: llm.LLMContext,
+    ) -> JsonObjectType:
+        """Call the JARVIS Add-on runtime health capability."""
+        return await self._client.execute_capability(
+            capability="system.health",
             parameters={},
         )
 

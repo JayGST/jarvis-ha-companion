@@ -19,6 +19,7 @@ Completed:
 5. Complete end-to-end testing with the Project-JARVIS Add-on.
 6. Add the current Project Knowledge tool set.
 7. Complete Runtime Identity Integration.
+8. Add the first read-only runtime status LLM tool.
 
 Runtime Identity Integration:
 
@@ -37,6 +38,13 @@ Current implemented tools:
 * `get_ideas`
 * `get_roadmap_items`
 * `find_decision`
+* `get_runtime_status`
+
+Runtime status:
+
+* `get_runtime_status` lets Home Assistant / Claude ask whether the Windows Agent or desktop runtime is currently reachable.
+* The Companion maps the tool to Project-JARVIS runtime health and does not contact the Windows Agent directly.
+* Project-JARVIS remains the orchestrator and owner of routing.
 
 ---
 

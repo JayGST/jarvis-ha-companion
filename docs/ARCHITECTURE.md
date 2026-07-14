@@ -101,7 +101,7 @@ The Companion caches only the runtime identity text returned during setup. It do
 
 # Current LLM Tools
 
-The Companion Integration currently registers multiple Project Knowledge LLM tools:
+The Companion Integration currently registers multiple LLM tools, including Project Knowledge tools and runtime status tools:
 
 * `inspect_project_module`
 * `list_capabilities`
@@ -109,10 +109,13 @@ The Companion Integration currently registers multiple Project Knowledge LLM too
 * `get_ideas`
 * `get_roadmap_items`
 * `find_decision`
+* `get_runtime_status`
 
 Each tool forwards directly to the matching Add-on capability.
 
-No tool contains Project Knowledge business logic.
+`get_runtime_status` is a read-only runtime reachability tool. It has no parameters and forwards to the Project-JARVIS runtime health capability through `JarvisAddonClient`.
+
+No tool contains Project Knowledge, Windows Agent, routing, or orchestration business logic. Project-JARVIS owns routing and capability execution.
 
 ---
 
