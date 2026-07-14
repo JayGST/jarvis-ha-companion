@@ -45,8 +45,20 @@ CAPABILITY_GUIDANCE = (
     "decisions. get_ideas lists ideas only. "
     "Use get_roadmap_items for planned roadmap work. "
     "Use find_decision for accepted architecture decisions. "
-    "Use get_runtime_status when the user asks whether the Windows Agent, "
-    "desktop runtime, or runtime connection is currently reachable or online. "
+    "Use get_runtime_status for current reachability questions such as "
+    "whether the Windows Agent is reachable or online, whether the main PC "
+    "is on, whether the desktop runtime is running, or whether JARVIS can "
+    "currently reach the PC. Status questions require a fresh tool call. A "
+    "reachable Windows Agent means the Windows PC is currently running. The "
+    "result only proves current reachability and reported health status; it "
+    "does not prove long-term stability, screen state, user presence, lock "
+    "state, workload, or standby details. Do not claim the agent is stable "
+    "unless the tool result provides monitoring data that supports that. "
+    "Use get_runtime_info when the user asks for Windows Agent information, "
+    "hostname, operating system, platform, architecture, or Python runtime "
+    "information. Use get_runtime_capabilities when the user asks what the "
+    "Windows Agent can do, which capabilities it exposes, or which Windows "
+    "Agent functions are available. "
     "Use inspect_project_module for questions about one specific project "
     "item, feature, or capability, and for explicit implementation, "
     "architecture, code structure, repository layout, or software "
@@ -84,6 +96,8 @@ class JarvisLLMAPI(llm.API):
                 GetRoadmapItemsTool(self._client),
                 FindDecisionTool(self._client),
                 GetRuntimeStatusTool(self._client),
+                GetRuntimeInfoTool(self._client),
+                GetRuntimeCapabilitiesTool(self._client),
             ],
         )
 
@@ -272,9 +286,15 @@ class GetRuntimeStatusTool(llm.Tool):
 
     name = "get_runtime_status"
     description = (
-        "Use when the user asks whether the Windows Agent is reachable, what "
-        "the runtime status is, whether JARVIS can reach the Windows Agent, "
-        "or whether the desktop runtime is online. This is read-only."
+        "Use for current status questions: whether the Windows Agent is "
+        "reachable or online, whether the user's main PC is on, whether the "
+        "desktop runtime is running, or whether JARVIS can currently reach "
+        "the PC. Always make a fresh tool call for current status. A "
+        "reachable Windows Agent means the Windows PC is currently running. "
+        "The result only proves current reachability and reported health "
+        "status; it does not prove long-term stability, screen state, user "
+        "presence, lock state, workload, or standby details. This is "
+        "read-only."
     )
     parameters = vol.Schema({})
 
@@ -290,6 +310,60 @@ class GetRuntimeStatusTool(llm.Tool):
         """Call the JARVIS Add-on runtime health capability."""
         return await self._client.execute_capability(
             capability="system.health",
+            parameters={},
+        )
+
+
+class GetRuntimeInfoTool(llm.Tool):
+    """Tool for retrieving desktop runtime information."""
+
+    name = "get_runtime_info"
+    description = (
+        "Use when the user asks for Windows Agent information, hostname, "
+        "operating system, platform, architecture, or Python runtime "
+        "information. This is read-only."
+    )
+    parameters = vol.Schema({})
+
+    def __init__(self, client: JarvisAddonClient) -> None:
+        self._client = client
+
+    async def async_call(
+        self,
+        hass: HomeAssistant,
+        tool_input: llm.ToolInput,
+        llm_context: llm.LLMContext,
+    ) -> JsonObjectType:
+        """Call the JARVIS Add-on runtime information capability."""
+        return await self._client.execute_capability(
+            capability="system.info",
+            parameters={},
+        )
+
+
+class GetRuntimeCapabilitiesTool(llm.Tool):
+    """Tool for listing desktop runtime capabilities."""
+
+    name = "get_runtime_capabilities"
+    description = (
+        "Use when the user asks what the Windows Agent can do, which "
+        "capabilities the Windows Agent exposes, or which Windows Agent "
+        "functions are available. This is read-only."
+    )
+    parameters = vol.Schema({})
+
+    def __init__(self, client: JarvisAddonClient) -> None:
+        self._client = client
+
+    async def async_call(
+        self,
+        hass: HomeAssistant,
+        tool_input: llm.ToolInput,
+        llm_context: llm.LLMContext,
+    ) -> JsonObjectType:
+        """Call the JARVIS Add-on runtime capabilities capability."""
+        return await self._client.execute_capability(
+            capability="system.capabilities",
             parameters={},
         )
 

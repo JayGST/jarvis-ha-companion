@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import inspect
+
 import pytest
 
 from homeassistant.helpers import llm
@@ -13,6 +15,8 @@ from custom_components.jarvis_ha_companion.llm import (
     FindDecisionTool,
     GetIdeasTool,
     GetRoadmapItemsTool,
+    GetRuntimeCapabilitiesTool,
+    GetRuntimeInfoTool,
     GetRuntimeStatusTool,
     InspectProjectModuleTool,
     JarvisLLMAPI,
@@ -94,6 +98,8 @@ async def test_registered_llm_tools_forward_to_existing_capabilities() -> None:
         "get_roadmap_items",
         "find_decision",
         "get_runtime_status",
+        "get_runtime_info",
+        "get_runtime_capabilities",
     }
     api = JarvisLLMAPI(object(), client, "Canonical runtime identity.")
     instance = await api.async_get_api_instance(llm.LLMContext())
@@ -135,6 +141,16 @@ async def test_registered_llm_tools_forward_to_existing_capabilities() -> None:
         llm.ToolInput({}),
         llm.LLMContext(),
     )
+    runtime_info_result = await GetRuntimeInfoTool(client).async_call(
+        object(),
+        llm.ToolInput({}),
+        llm.LLMContext(),
+    )
+    runtime_capabilities_result = await GetRuntimeCapabilitiesTool(client).async_call(
+        object(),
+        llm.ToolInput({}),
+        llm.LLMContext(),
+    )
 
     assert inspect_result["result"]["capability"] == "inspect_project_module"
     assert capabilities_result["result"]["capability"] == "list_capabilities"
@@ -143,6 +159,11 @@ async def test_registered_llm_tools_forward_to_existing_capabilities() -> None:
     assert roadmap_result["result"]["capability"] == "get_roadmap_items"
     assert decision_result["result"]["capability"] == "find_decision"
     assert runtime_result["result"]["capability"] == "system.health"
+    assert runtime_info_result["result"]["capability"] == "system.info"
+    assert (
+        runtime_capabilities_result["result"]["capability"]
+        == "system.capabilities"
+    )
     assert client.calls == [
         ("inspect_project_module", {"module_name": "Windows Agent"}),
         ("list_capabilities", {}),
@@ -151,6 +172,8 @@ async def test_registered_llm_tools_forward_to_existing_capabilities() -> None:
         ("get_roadmap_items", {}),
         ("find_decision", {}),
         ("system.health", {}),
+        ("system.info", {}),
+        ("system.capabilities", {}),
     ]
 
 
@@ -180,3 +203,94 @@ async def test_runtime_status_tool_has_no_parameters_and_fixed_mapping() -> None
             "parameters": {},
         }
     }
+
+
+@pytest.mark.asyncio
+async def test_runtime_info_tool_has_no_parameters_and_fixed_mapping() -> None:
+    """Runtime info cannot accept user-controlled capabilities or parameters."""
+    client = FakeClient()
+    tool = GetRuntimeInfoTool(client)
+
+    result = await tool.async_call(
+        object(),
+        llm.ToolInput(
+            {
+                "capability": "arbitrary.capability",
+                "parameters": {"path": "C:/"},
+                "provider": "windows-agent",
+            }
+        ),
+        llm.LLMContext(),
+    )
+
+    assert tool.parameters.schema == {}
+    assert client.calls == [("system.info", {})]
+    assert result == {
+        "result": {
+            "capability": "system.info",
+            "parameters": {},
+        }
+    }
+
+
+@pytest.mark.asyncio
+async def test_runtime_capabilities_tool_has_no_parameters_and_fixed_mapping() -> None:
+    """Runtime capabilities cannot accept user-controlled capabilities."""
+    client = FakeClient()
+    tool = GetRuntimeCapabilitiesTool(client)
+
+    result = await tool.async_call(
+        object(),
+        llm.ToolInput(
+            {
+                "capability": "arbitrary.capability",
+                "parameters": {"write": True},
+                "provider": "windows-agent",
+            }
+        ),
+        llm.LLMContext(),
+    )
+
+    assert tool.parameters.schema == {}
+    assert client.calls == [("system.capabilities", {})]
+    assert result == {
+        "result": {
+            "capability": "system.capabilities",
+            "parameters": {},
+        }
+    }
+
+
+def test_runtime_guidance_requires_fresh_status_checks_without_stability_claims() -> None:
+    """Prompt guidance keeps runtime status claims narrow."""
+    prompt = build_api_prompt("Canonical runtime identity.")
+
+    assert "Status questions require a fresh tool call" in prompt
+    assert "reachable Windows Agent means the Windows PC is currently running" in prompt
+    assert "does not prove long-term stability" in prompt
+    assert "screen state, user presence, lock state, workload, or standby details" in prompt
+    assert "Do not claim the agent is stable" in prompt
+    assert "direct Windows Agent" not in prompt
+
+
+def test_runtime_tools_do_not_route_or_contact_windows_agent_directly() -> None:
+    """Runtime tools stay behind JarvisAddonClient instead of direct transports."""
+    source = "\n".join(
+        inspect.getsource(tool)
+        for tool in (
+            GetRuntimeStatusTool,
+            GetRuntimeInfoTool,
+            GetRuntimeCapabilitiesTool,
+        )
+    )
+
+    assert source.count("execute_capability(") == 3
+    assert "system.health" in source
+    assert "system.info" in source
+    assert "system.capabilities" in source
+    assert "async_get_clientsession" not in source
+    assert "requests" not in source
+    assert "httpx" not in source
+    assert "subprocess" not in source
+    assert "provider" not in source
+    assert "route" not in source.lower()

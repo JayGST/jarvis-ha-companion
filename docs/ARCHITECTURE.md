@@ -110,10 +110,16 @@ The Companion Integration currently registers multiple LLM tools, including Proj
 * `get_roadmap_items`
 * `find_decision`
 * `get_runtime_status`
+* `get_runtime_info`
+* `get_runtime_capabilities`
 
 Each tool forwards directly to the matching Add-on capability.
 
-`get_runtime_status` is a read-only runtime reachability tool. It has no parameters and forwards to the Project-JARVIS runtime health capability through `JarvisAddonClient`.
+The runtime tools are read-only and accept no parameters:
+
+* `get_runtime_status` forwards current reachability and health checks to Project-JARVIS.
+* `get_runtime_info` forwards runtime information requests to Project-JARVIS.
+* `get_runtime_capabilities` forwards Windows Agent capability listing requests to Project-JARVIS.
 
 No tool contains Project Knowledge, Windows Agent, routing, or orchestration business logic. Project-JARVIS owns routing and capability execution.
 

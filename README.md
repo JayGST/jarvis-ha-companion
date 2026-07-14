@@ -49,9 +49,13 @@ The Companion Integration currently registers these Home Assistant LLM tools:
 * `get_ideas` - forwards documented idea requests to Project-JARVIS.
 * `get_roadmap_items` - forwards roadmap item requests to Project-JARVIS.
 * `find_decision` - forwards accepted architecture decision requests to Project-JARVIS.
-* `get_runtime_status` - read-only runtime reachability check for questions such as whether the Windows Agent or desktop runtime is online.
+* `get_runtime_status` - read-only current reachability and health check for questions such as whether the Windows Agent, main PC, or desktop runtime is online.
+* `get_runtime_info` - read-only Windows Agent runtime information, such as hostname, operating system, platform, architecture, and Python runtime information.
+* `get_runtime_capabilities` - read-only list of Windows Agent capabilities or available Windows Agent functions.
 
 Each tool uses a fixed backend capability mapping in the Companion and returns the Project-JARVIS Capability API response. Project-JARVIS owns routing, orchestration and execution.
+
+Runtime status results prove only current reachability and reported health status. They do not prove long-term stability, screen state, user presence, lock state, workload, or standby details.
 
 ---
 
