@@ -63,6 +63,17 @@ CAPABILITY_GUIDANCE = (
     "roadmap plans...', or 'The engineering notes indicate...'. Do not say "
     "'I searched ROADMAP.md' or 'I searched OPEN_ITEMS.md' unless the user "
     "explicitly asks where the information came from. "
+    "Use repository_file_exists, list_repository_directory, and "
+    "read_repository_file only for live files inside explicitly approved "
+    "Windows Agent repositories. Use search_project for synchronized "
+    "Project Knowledge and do not use repository filesystem tools for "
+    "general project questions when search_project is sufficient. Do not "
+    "claim access to arbitrary Desktop, Documents, drive, or system folder "
+    "locations. Do not invent repository IDs; ask for the approved "
+    "repository ID or relative path when genuinely missing. Absolute paths "
+    "and parent-directory traversal are unavailable. Repository filesystem "
+    "tools are read-only; write, delete, move, and rename operations are "
+    "unavailable. "
     "Use get_runtime_status for current reachability questions such as "
     "whether the Windows Agent is reachable or online, whether the main PC "
     "is on, whether the desktop runtime is running, or whether JARVIS can "
@@ -114,6 +125,9 @@ class JarvisLLMAPI(llm.API):
                 GetRoadmapItemsTool(self._client),
                 FindDecisionTool(self._client),
                 SearchProjectTool(self._client),
+                RepositoryFileExistsTool(self._client),
+                ListRepositoryDirectoryTool(self._client),
+                ReadRepositoryFileTool(self._client),
                 GetRuntimeStatusTool(self._client),
                 GetRuntimeInfoTool(self._client),
                 GetRuntimeCapabilitiesTool(self._client),
@@ -342,6 +356,121 @@ class SearchProjectTool(llm.Tool):
         return await self._client.execute_capability(
             capability="search_project",
             parameters=parameters,
+        )
+
+
+class RepositoryFileExistsTool(llm.Tool):
+    """Tool for checking an approved repository-relative file path."""
+
+    name = "repository_file_exists"
+    description = (
+        "Use to check whether a file exists inside a Windows Agent repository "
+        "that is explicitly approved in Project-JARVIS configuration. "
+        "repository_id must name an approved repository. relative_path must "
+        "be relative to that repository. Absolute paths and '..' traversal "
+        "are not accepted. This tool cannot access arbitrary PC locations. "
+        "Write, delete, move, and rename operations are unavailable."
+    )
+    parameters = vol.Schema(
+        {
+            vol.Required("repository_id"): vol.All(str, vol.Length(min=1)),
+            vol.Required("relative_path"): vol.All(str, vol.Length(min=1)),
+        }
+    )
+
+    def __init__(self, client: JarvisAddonClient) -> None:
+        self._client = client
+
+    async def async_call(
+        self,
+        hass: HomeAssistant,
+        tool_input: llm.ToolInput,
+        llm_context: llm.LLMContext,
+    ) -> JsonObjectType:
+        """Call the JARVIS Add-on filesystem.file_exists capability."""
+        return await self._client.execute_capability(
+            capability="filesystem.file_exists",
+            parameters={
+                "repository_id": tool_input.tool_args["repository_id"],
+                "relative_path": tool_input.tool_args["relative_path"],
+            },
+        )
+
+
+class ListRepositoryDirectoryTool(llm.Tool):
+    """Tool for listing an approved repository-relative directory path."""
+
+    name = "list_repository_directory"
+    description = (
+        "Use to list a directory inside a Windows Agent repository that is "
+        "explicitly approved in Project-JARVIS configuration. repository_id "
+        "must name an approved repository. relative_path must be relative to "
+        "that repository. Absolute paths and '..' traversal are not accepted. "
+        "This tool cannot access arbitrary PC locations. Write, delete, move, "
+        "and rename operations are unavailable."
+    )
+    parameters = vol.Schema(
+        {
+            vol.Required("repository_id"): vol.All(str, vol.Length(min=1)),
+            vol.Required("relative_path"): vol.All(str, vol.Length(min=1)),
+        }
+    )
+
+    def __init__(self, client: JarvisAddonClient) -> None:
+        self._client = client
+
+    async def async_call(
+        self,
+        hass: HomeAssistant,
+        tool_input: llm.ToolInput,
+        llm_context: llm.LLMContext,
+    ) -> JsonObjectType:
+        """Call the JARVIS Add-on filesystem.list_directory capability."""
+        return await self._client.execute_capability(
+            capability="filesystem.list_directory",
+            parameters={
+                "repository_id": tool_input.tool_args["repository_id"],
+                "relative_path": tool_input.tool_args["relative_path"],
+            },
+        )
+
+
+class ReadRepositoryFileTool(llm.Tool):
+    """Tool for reading an approved repository-relative UTF-8 text file."""
+
+    name = "read_repository_file"
+    description = (
+        "Use to read a small UTF-8 text file inside a Windows Agent "
+        "repository that is explicitly approved in Project-JARVIS "
+        "configuration. repository_id must name an approved repository. "
+        "relative_path must be relative to that repository. Absolute paths "
+        "and '..' traversal are not accepted. This tool cannot access "
+        "arbitrary PC locations. Write, delete, move, and rename operations "
+        "are unavailable."
+    )
+    parameters = vol.Schema(
+        {
+            vol.Required("repository_id"): vol.All(str, vol.Length(min=1)),
+            vol.Required("relative_path"): vol.All(str, vol.Length(min=1)),
+        }
+    )
+
+    def __init__(self, client: JarvisAddonClient) -> None:
+        self._client = client
+
+    async def async_call(
+        self,
+        hass: HomeAssistant,
+        tool_input: llm.ToolInput,
+        llm_context: llm.LLMContext,
+    ) -> JsonObjectType:
+        """Call the JARVIS Add-on filesystem.read_file capability."""
+        return await self._client.execute_capability(
+            capability="filesystem.read_file",
+            parameters={
+                "repository_id": tool_input.tool_args["repository_id"],
+                "relative_path": tool_input.tool_args["relative_path"],
+            },
         )
 
 

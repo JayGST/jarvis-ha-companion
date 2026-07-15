@@ -50,11 +50,16 @@ The Companion Integration currently registers these Home Assistant LLM tools:
 * `get_roadmap_items` - forwards roadmap item requests to Project-JARVIS.
 * `find_decision` - forwards accepted architecture decision requests to Project-JARVIS.
 * `search_project` - forwards read-only JARVIS project searches to Project-JARVIS for project documentation, architecture, decisions, roadmap, open items, and development history.
+* `repository_file_exists` - forwards read-only file existence checks for explicitly approved Windows Agent repositories.
+* `list_repository_directory` - forwards read-only directory listing requests for explicitly approved Windows Agent repositories.
+* `read_repository_file` - forwards read-only small UTF-8 text file reads for explicitly approved Windows Agent repositories.
 * `get_runtime_status` - read-only current reachability and health check for questions such as whether the Windows Agent, main PC, or desktop runtime is online.
 * `get_runtime_info` - read-only Windows Agent runtime information, such as hostname, operating system, platform, architecture, and Python runtime information.
 * `get_runtime_capabilities` - read-only list of Windows Agent capabilities or available Windows Agent functions.
 
 Each tool uses a fixed backend capability mapping in the Companion and returns the Project-JARVIS Capability API response. Project-JARVIS owns routing, orchestration and execution.
+
+Repository filesystem tools are limited to repository IDs explicitly approved in Project-JARVIS configuration and repository-relative paths. They do not provide arbitrary filesystem access, absolute path access, or write operations. Project-JARVIS owns authorization and routing; the Windows Agent owns final repository-root and path enforcement.
 
 Runtime status results prove only current reachability and reported health status. They do not prove long-term stability, screen state, user presence, lock state, workload, or standby details.
 

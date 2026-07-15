@@ -13,7 +13,28 @@ class _Schema:
         self.schema = schema
 
     def __call__(self, value: Any) -> Any:
+        if isinstance(self.schema, dict):
+            if not isinstance(value, dict):
+                raise Invalid("Expected a dictionary.")
+
+            output = dict(value)
+
+            for key, validator in self.schema.items():
+                key_name = key.key if isinstance(key, (_Required, _Optional)) else key
+
+                if isinstance(key, _Required) and key_name not in value:
+                    raise Invalid(f"Missing required key: {key_name}")
+
+                if key_name in value:
+                    _validate_value(value[key_name], validator)
+
+            return output
+
         return value
+
+
+class Invalid(Exception):
+    """Stub voluptuous validation error."""
 
 
 class _Required:
@@ -43,11 +64,40 @@ class _Length:
         self.min = min
 
     def __call__(self, value: Any) -> Any:
+        if self.min is not None and len(value) < self.min:
+            raise Invalid("Value is too short.")
+
         return value
 
 
 def _all(*validators: Any) -> Any:
-    return validators[-1]
+    return _AllValidator(validators)
+
+
+class _AllValidator:
+    def __init__(self, validators: tuple[Any, ...]) -> None:
+        self.validators = validators
+
+    def __call__(self, value: Any) -> Any:
+        for validator in self.validators:
+            _validate_value(value, validator)
+
+        return value
+
+
+def _validate_value(value: Any, validator: Any) -> None:
+    if validator is str:
+        if not isinstance(value, str):
+            raise Invalid("Expected a string.")
+        return
+
+    if validator is int:
+        if not isinstance(value, int):
+            raise Invalid("Expected an integer.")
+        return
+
+    if callable(validator):
+        validator(value)
 
 
 voluptuous = ModuleType("voluptuous")
@@ -56,6 +106,7 @@ voluptuous.Required = _Required
 voluptuous.Optional = _Optional
 voluptuous.Length = _Length
 voluptuous.All = _all
+voluptuous.Invalid = Invalid
 sys.modules.setdefault("voluptuous", voluptuous)
 
 aiohttp = ModuleType("aiohttp")

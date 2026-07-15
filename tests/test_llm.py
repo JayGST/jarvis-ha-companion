@@ -20,8 +20,11 @@ from custom_components.jarvis_ha_companion.llm import (
     GetRuntimeStatusTool,
     InspectProjectModuleTool,
     JarvisLLMAPI,
+    ListRepositoryDirectoryTool,
     ListCapabilitiesTool,
     ListExtensionsTool,
+    ReadRepositoryFileTool,
+    RepositoryFileExistsTool,
     SearchProjectTool,
     build_api_prompt,
 )
@@ -99,6 +102,9 @@ async def test_registered_llm_tools_forward_to_existing_capabilities() -> None:
         "get_roadmap_items",
         "find_decision",
         "search_project",
+        "repository_file_exists",
+        "list_repository_directory",
+        "read_repository_file",
         "get_runtime_status",
         "get_runtime_info",
         "get_runtime_capabilities",
@@ -143,6 +149,36 @@ async def test_registered_llm_tools_forward_to_existing_capabilities() -> None:
         llm.ToolInput({"query": "identity decisions"}),
         llm.LLMContext(),
     )
+    exists_result = await RepositoryFileExistsTool(client).async_call(
+        object(),
+        llm.ToolInput(
+            {
+                "repository_id": "companion",
+                "relative_path": "README.md",
+            }
+        ),
+        llm.LLMContext(),
+    )
+    directory_result = await ListRepositoryDirectoryTool(client).async_call(
+        object(),
+        llm.ToolInput(
+            {
+                "repository_id": "companion",
+                "relative_path": "docs",
+            }
+        ),
+        llm.LLMContext(),
+    )
+    read_result = await ReadRepositoryFileTool(client).async_call(
+        object(),
+        llm.ToolInput(
+            {
+                "repository_id": "companion",
+                "relative_path": "README.md",
+            }
+        ),
+        llm.LLMContext(),
+    )
     runtime_result = await GetRuntimeStatusTool(client).async_call(
         object(),
         llm.ToolInput({}),
@@ -166,6 +202,9 @@ async def test_registered_llm_tools_forward_to_existing_capabilities() -> None:
     assert roadmap_result["result"]["capability"] == "get_roadmap_items"
     assert decision_result["result"]["capability"] == "find_decision"
     assert search_result["result"]["capability"] == "search_project"
+    assert exists_result["result"]["capability"] == "filesystem.file_exists"
+    assert directory_result["result"]["capability"] == "filesystem.list_directory"
+    assert read_result["result"]["capability"] == "filesystem.read_file"
     assert runtime_result["result"]["capability"] == "system.health"
     assert runtime_info_result["result"]["capability"] == "system.info"
     assert (
@@ -180,6 +219,18 @@ async def test_registered_llm_tools_forward_to_existing_capabilities() -> None:
         ("get_roadmap_items", {}),
         ("find_decision", {}),
         ("search_project", {"query": "identity decisions"}),
+        (
+            "filesystem.file_exists",
+            {"repository_id": "companion", "relative_path": "README.md"},
+        ),
+        (
+            "filesystem.list_directory",
+            {"repository_id": "companion", "relative_path": "docs"},
+        ),
+        (
+            "filesystem.read_file",
+            {"repository_id": "companion", "relative_path": "README.md"},
+        ),
         ("system.health", {}),
         ("system.info", {}),
         ("system.capabilities", {}),
@@ -432,3 +483,190 @@ def test_search_project_guidance_uses_natural_source_language() -> None:
     assert "The engineering notes indicate" in prompt
     assert "Do not say 'I searched ROADMAP.md'" in prompt
     assert "I searched OPEN_ITEMS.md" in prompt
+
+
+def _filesystem_tool_expectations() -> tuple[tuple[object, str], ...]:
+    client = FakeClient()
+    return (
+        (RepositoryFileExistsTool(client), "filesystem.file_exists"),
+        (ListRepositoryDirectoryTool(client), "filesystem.list_directory"),
+        (ReadRepositoryFileTool(client), "filesystem.read_file"),
+    )
+
+
+def test_repository_filesystem_tool_schemas_require_repository_and_path() -> None:
+    """Filesystem tools require non-empty repository_id and relative_path."""
+    for tool, _capability in _filesystem_tool_expectations():
+        with pytest.raises(Exception):
+            tool.parameters({})
+
+        with pytest.raises(Exception):
+            tool.parameters({"repository_id": "repo"})
+
+        with pytest.raises(Exception):
+            tool.parameters({"relative_path": "README.md"})
+
+        with pytest.raises(Exception):
+            tool.parameters({"repository_id": "", "relative_path": "README.md"})
+
+        with pytest.raises(Exception):
+            tool.parameters({"repository_id": "repo", "relative_path": ""})
+
+        assert tool.parameters(
+            {"repository_id": "repo", "relative_path": "README.md"}
+        ) == {"repository_id": "repo", "relative_path": "README.md"}
+
+
+def test_repository_filesystem_tool_schemas_do_not_expose_control_fields() -> None:
+    """Filesystem tool schemas expose no backend control or absolute-path fields."""
+    disallowed = {
+        "capability",
+        "provider",
+        "owner",
+        "routing",
+        "endpoint",
+        "windows_agent_url",
+        "root",
+        "absolute_path",
+        "parameters",
+    }
+
+    for tool, _capability in _filesystem_tool_expectations():
+        schema_keys = {key.key for key in tool.parameters.schema}
+
+        assert schema_keys == {"repository_id", "relative_path"}
+        assert schema_keys.isdisjoint(disallowed)
+
+
+@pytest.mark.asyncio
+async def test_repository_filesystem_tools_have_fixed_backend_mappings() -> None:
+    """Filesystem tools call their fixed Project-JARVIS capabilities."""
+    client = FakeClient()
+    tool_expectations = (
+        (RepositoryFileExistsTool(client), "filesystem.file_exists"),
+        (ListRepositoryDirectoryTool(client), "filesystem.list_directory"),
+        (ReadRepositoryFileTool(client), "filesystem.read_file"),
+    )
+
+    for tool, capability in tool_expectations:
+        await tool.async_call(
+            object(),
+            llm.ToolInput(
+                {
+                    "repository_id": "companion",
+                    "relative_path": "README.md",
+                }
+            ),
+            llm.LLMContext(),
+        )
+
+        assert client.calls[-1] == (
+            capability,
+            {"repository_id": "companion", "relative_path": "README.md"},
+        )
+
+
+@pytest.mark.asyncio
+async def test_repository_filesystem_tools_ignore_unsupported_control_inputs() -> None:
+    """Filesystem tools cannot be redirected through unsupported inputs."""
+    client = FakeClient()
+    tool_expectations = (
+        (RepositoryFileExistsTool(client), "filesystem.file_exists"),
+        (ListRepositoryDirectoryTool(client), "filesystem.list_directory"),
+        (ReadRepositoryFileTool(client), "filesystem.read_file"),
+    )
+
+    for tool, capability in tool_expectations:
+        await tool.async_call(
+            object(),
+            llm.ToolInput(
+                {
+                    "repository_id": "companion",
+                    "relative_path": "README.md",
+                    "capability": "filesystem.write_file",
+                    "provider": "windows-agent",
+                    "owner": "companion",
+                    "routing": "direct",
+                    "endpoint": "http://127.0.0.1",
+                    "windows_agent_url": "http://127.0.0.1",
+                    "root": "C:/",
+                    "absolute_path": "C:/Users/jonas/Desktop/secret.txt",
+                    "parameters": {"operation": "write"},
+                }
+            ),
+            llm.LLMContext(),
+        )
+
+        assert client.calls[-1] == (
+            capability,
+            {"repository_id": "companion", "relative_path": "README.md"},
+        )
+
+
+def test_repository_filesystem_guidance_sets_approved_repository_boundary() -> None:
+    """Prompt guidance keeps filesystem access behind approved repositories."""
+    prompt = build_api_prompt("Canonical runtime identity.")
+
+    assert "Use repository_file_exists, list_repository_directory, and read_repository_file" in prompt
+    assert "only for live files inside explicitly approved Windows Agent repositories" in prompt
+    assert "Use search_project for synchronized Project Knowledge" in prompt
+    assert "do not use repository filesystem tools for general project questions" in prompt
+    assert "Do not claim access to arbitrary Desktop, Documents, drive, or system folder" in prompt
+    assert "Do not invent repository IDs" in prompt
+    assert "ask for the approved repository ID or relative path" in prompt
+    assert "Absolute paths and parent-directory traversal are unavailable" in prompt
+    assert "write, delete, move, and rename operations are unavailable" in prompt
+
+
+def test_repository_filesystem_tools_do_not_route_or_contact_windows_agent_directly() -> None:
+    """Filesystem tools stay behind JarvisAddonClient fixed mappings."""
+    source = "\n".join(
+        inspect.getsource(tool)
+        for tool in (
+            RepositoryFileExistsTool,
+            ListRepositoryDirectoryTool,
+            ReadRepositoryFileTool,
+        )
+    )
+
+    assert source.count("execute_capability(") == 3
+    assert "filesystem.file_exists" in source
+    assert "filesystem.list_directory" in source
+    assert "filesystem.read_file" in source
+    assert "async_get_clientsession" not in source
+    assert "requests" not in source
+    assert "httpx" not in source
+    assert "subprocess" not in source
+    assert "provider" not in source
+    assert "route" not in source.lower()
+    assert "filesystem.write" not in source
+    assert "filesystem.delete" not in source
+    assert "filesystem.rename" not in source
+    assert "filesystem.move" not in source
+
+
+@pytest.mark.asyncio
+async def test_no_generic_filesystem_or_write_capable_tool_is_registered() -> None:
+    """The Companion exposes only dedicated read-only filesystem tools."""
+    client = FakeClient()
+    api = JarvisLLMAPI(object(), client, "Canonical runtime identity.")
+    instance = await api.async_get_api_instance(llm.LLMContext())
+    tool_names = {tool.name for tool in instance.tools}
+
+    filesystem_tool_names = {
+        RepositoryFileExistsTool.name,
+        ListRepositoryDirectoryTool.name,
+        ReadRepositoryFileTool.name,
+    }
+
+    assert filesystem_tool_names == {
+        "repository_file_exists",
+        "list_repository_directory",
+        "read_repository_file",
+    }
+    assert filesystem_tool_names.issubset(tool_names)
+    assert "filesystem_execute" not in tool_names
+    assert "write_repository_file" not in tool_names
+    assert "delete_repository_file" not in tool_names
+    assert "move_repository_file" not in tool_names
+    assert "rename_repository_file" not in tool_names

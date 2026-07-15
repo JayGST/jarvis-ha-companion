@@ -110,6 +110,9 @@ The Companion Integration currently registers multiple LLM tools, including Proj
 * `get_roadmap_items`
 * `find_decision`
 * `search_project`
+* `repository_file_exists`
+* `list_repository_directory`
+* `read_repository_file`
 * `get_runtime_status`
 * `get_runtime_info`
 * `get_runtime_capabilities`
@@ -117,6 +120,14 @@ The Companion Integration currently registers multiple LLM tools, including Proj
 Each tool forwards directly to the matching Add-on capability.
 
 `search_project` is a read-only Project Knowledge search adapter. It accepts a required query and optional limit, then forwards those parameters to Project-JARVIS without implementing search logic locally.
+
+The repository filesystem tools are dedicated read-only adapters with fixed Project-JARVIS capability mappings:
+
+* `repository_file_exists` -> `filesystem.file_exists`
+* `list_repository_directory` -> `filesystem.list_directory`
+* `read_repository_file` -> `filesystem.read_file`
+
+They accept only `repository_id` and `relative_path`. `repository_id` refers to a repository explicitly approved in Project-JARVIS configuration, and `relative_path` is relative to that approved repository. The Companion does not provide arbitrary filesystem access, absolute path access, or write operations. Project-JARVIS owns authorization and routing. The Windows Agent owns final repository-root and path enforcement.
 
 The runtime tools are read-only and accept no parameters:
 
