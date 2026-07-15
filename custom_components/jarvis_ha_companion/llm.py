@@ -43,8 +43,26 @@ CAPABILITY_GUIDANCE = (
     "future ideas, or uncommitted possibilities. Do not use get_ideas for "
     "implemented capabilities, installed extensions, roadmap items, or ADR "
     "decisions. get_ideas lists ideas only. "
-    "Use get_roadmap_items for planned roadmap work. "
-    "Use find_decision for accepted architecture decisions. "
+    "Use get_roadmap_items for direct requests to list planned roadmap work. "
+    "Use find_decision for direct requests about accepted architecture "
+    "decisions or ADRs. "
+    "For almost every broad question about JARVIS architecture, roadmap, "
+    "development, project decisions, open items, engineering discussions, "
+    "implementation history, or project documentation, first consider "
+    "search_project. Specialized tools such as find_decision, "
+    "inspect_project_module, get_roadmap_items, get_runtime_info, and "
+    "get_runtime_capabilities remain better when the user clearly asks for "
+    "that exact structured information. Do not use search_project for "
+    "general knowledge, internet search, Windows filesystem search, or Home "
+    "Assistant entity queries. Avoid repeated search_project calls. If the "
+    "first search gives enough information, answer directly. If refinement "
+    "is needed, perform at most one additional focused search. Avoid chains "
+    "of three or more speculative searches. Summarize search results "
+    "naturally unless the user explicitly asks for raw results. Prefer "
+    "wording such as 'The project documentation describes...', 'The current "
+    "roadmap plans...', or 'The engineering notes indicate...'. Do not say "
+    "'I searched ROADMAP.md' or 'I searched OPEN_ITEMS.md' unless the user "
+    "explicitly asks where the information came from. "
     "Use get_runtime_status for current reachability questions such as "
     "whether the Windows Agent is reachable or online, whether the main PC "
     "is on, whether the desktop runtime is running, or whether JARVIS can "
@@ -95,6 +113,7 @@ class JarvisLLMAPI(llm.API):
                 GetIdeasTool(self._client),
                 GetRoadmapItemsTool(self._client),
                 FindDecisionTool(self._client),
+                SearchProjectTool(self._client),
                 GetRuntimeStatusTool(self._client),
                 GetRuntimeInfoTool(self._client),
                 GetRuntimeCapabilitiesTool(self._client),
@@ -278,6 +297,51 @@ class ListCapabilitiesTool(llm.Tool):
         return await self._client.execute_capability(
             capability="list_capabilities",
             parameters={},
+        )
+
+
+class SearchProjectTool(llm.Tool):
+    """Tool for searching Project JARVIS knowledge through the Add-on."""
+
+    name = "search_project"
+    description = (
+        "Best first tool for broad Project JARVIS questions about "
+        "architecture, roadmap, development, project decisions, open items, "
+        "engineering discussions, implementation history, or project "
+        "documentation. Do not use for general knowledge, internet search, "
+        "Windows filesystem search, or Home Assistant entity queries. Use "
+        "specialized tools instead when the user clearly asks for one "
+        "specific ADR decision, one specific implementation item, direct "
+        "roadmap listing, or Windows runtime status. Avoid repeated search "
+        "calls; one focused refinement search is enough when needed."
+    )
+    parameters = vol.Schema(
+        {
+            vol.Required("query"): str,
+            vol.Optional("limit"): int,
+        }
+    )
+
+    def __init__(self, client: JarvisAddonClient) -> None:
+        self._client = client
+
+    async def async_call(
+        self,
+        hass: HomeAssistant,
+        tool_input: llm.ToolInput,
+        llm_context: llm.LLMContext,
+    ) -> JsonObjectType:
+        """Call the JARVIS Add-on search_project capability."""
+        parameters: dict[str, str | int] = {
+            "query": tool_input.tool_args["query"],
+        }
+
+        if "limit" in tool_input.tool_args:
+            parameters["limit"] = tool_input.tool_args["limit"]
+
+        return await self._client.execute_capability(
+            capability="search_project",
+            parameters=parameters,
         )
 
 

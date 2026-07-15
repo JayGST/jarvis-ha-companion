@@ -109,11 +109,14 @@ The Companion Integration currently registers multiple LLM tools, including Proj
 * `get_ideas`
 * `get_roadmap_items`
 * `find_decision`
+* `search_project`
 * `get_runtime_status`
 * `get_runtime_info`
 * `get_runtime_capabilities`
 
 Each tool forwards directly to the matching Add-on capability.
+
+`search_project` is a read-only Project Knowledge search adapter. It accepts a required query and optional limit, then forwards those parameters to Project-JARVIS without implementing search logic locally.
 
 The runtime tools are read-only and accept no parameters:
 

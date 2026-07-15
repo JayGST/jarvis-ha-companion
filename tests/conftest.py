@@ -27,6 +27,17 @@ class _Required:
         return isinstance(other, _Required) and self.key == other.key
 
 
+class _Optional:
+    def __init__(self, key: str) -> None:
+        self.key = key
+
+    def __hash__(self) -> int:
+        return hash(self.key)
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, _Optional) and self.key == other.key
+
+
 class _Length:
     def __init__(self, *, min: int | None = None) -> None:
         self.min = min
@@ -42,6 +53,7 @@ def _all(*validators: Any) -> Any:
 voluptuous = ModuleType("voluptuous")
 voluptuous.Schema = _Schema
 voluptuous.Required = _Required
+voluptuous.Optional = _Optional
 voluptuous.Length = _Length
 voluptuous.All = _all
 sys.modules.setdefault("voluptuous", voluptuous)

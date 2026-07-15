@@ -22,6 +22,7 @@ from custom_components.jarvis_ha_companion.llm import (
     JarvisLLMAPI,
     ListCapabilitiesTool,
     ListExtensionsTool,
+    SearchProjectTool,
     build_api_prompt,
 )
 
@@ -97,6 +98,7 @@ async def test_registered_llm_tools_forward_to_existing_capabilities() -> None:
         "get_ideas",
         "get_roadmap_items",
         "find_decision",
+        "search_project",
         "get_runtime_status",
         "get_runtime_info",
         "get_runtime_capabilities",
@@ -136,6 +138,11 @@ async def test_registered_llm_tools_forward_to_existing_capabilities() -> None:
         llm.ToolInput({}),
         llm.LLMContext(),
     )
+    search_result = await SearchProjectTool(client).async_call(
+        object(),
+        llm.ToolInput({"query": "identity decisions"}),
+        llm.LLMContext(),
+    )
     runtime_result = await GetRuntimeStatusTool(client).async_call(
         object(),
         llm.ToolInput({}),
@@ -158,6 +165,7 @@ async def test_registered_llm_tools_forward_to_existing_capabilities() -> None:
     assert ideas_result["result"]["capability"] == "get_ideas"
     assert roadmap_result["result"]["capability"] == "get_roadmap_items"
     assert decision_result["result"]["capability"] == "find_decision"
+    assert search_result["result"]["capability"] == "search_project"
     assert runtime_result["result"]["capability"] == "system.health"
     assert runtime_info_result["result"]["capability"] == "system.info"
     assert (
@@ -171,6 +179,7 @@ async def test_registered_llm_tools_forward_to_existing_capabilities() -> None:
         ("get_ideas", {}),
         ("get_roadmap_items", {}),
         ("find_decision", {}),
+        ("search_project", {"query": "identity decisions"}),
         ("system.health", {}),
         ("system.info", {}),
         ("system.capabilities", {}),
@@ -294,3 +303,132 @@ def test_runtime_tools_do_not_route_or_contact_windows_agent_directly() -> None:
     assert "subprocess" not in source
     assert "provider" not in source
     assert "route" not in source.lower()
+
+
+@pytest.mark.asyncio
+async def test_search_project_tool_schema_and_fixed_mapping_with_query() -> None:
+    """Search forwards only the required query to the fixed backend capability."""
+    client = FakeClient()
+    tool = SearchProjectTool(client)
+    schema_keys = {key.key for key in tool.parameters.schema}
+
+    result = await tool.async_call(
+        object(),
+        llm.ToolInput({"query": "runtime architecture"}),
+        llm.LLMContext(),
+    )
+
+    assert schema_keys == {"query", "limit"}
+    assert client.calls == [("search_project", {"query": "runtime architecture"})]
+    assert result == {
+        "result": {
+            "capability": "search_project",
+            "parameters": {"query": "runtime architecture"},
+        }
+    }
+
+
+@pytest.mark.asyncio
+async def test_search_project_tool_forwards_optional_limit() -> None:
+    """Search forwards limit unchanged when the LLM supplies it."""
+    client = FakeClient()
+
+    await SearchProjectTool(client).async_call(
+        object(),
+        llm.ToolInput({"query": "roadmap open items", "limit": 3}),
+        llm.LLMContext(),
+    )
+
+    assert client.calls == [
+        ("search_project", {"query": "roadmap open items", "limit": 3})
+    ]
+
+
+@pytest.mark.asyncio
+async def test_search_project_tool_ignores_unsupported_backend_inputs() -> None:
+    """Search cannot be redirected with capability, provider, owner, or routing."""
+    client = FakeClient()
+
+    await SearchProjectTool(client).async_call(
+        object(),
+        llm.ToolInput(
+            {
+                "query": "architecture decisions",
+                "limit": 5,
+                "capability": "system.health",
+                "provider": "windows-agent",
+                "owner": "companion",
+                "routing": "direct",
+                "parameters": {"path": "C:/"},
+            }
+        ),
+        llm.LLMContext(),
+    )
+
+    assert client.calls == [
+        ("search_project", {"query": "architecture decisions", "limit": 5})
+    ]
+
+
+@pytest.mark.asyncio
+async def test_search_project_tool_requires_query() -> None:
+    """The tool implementation requires query before forwarding to the backend."""
+    client = FakeClient()
+
+    with pytest.raises(KeyError):
+        await SearchProjectTool(client).async_call(
+            object(),
+            llm.ToolInput({"limit": 3}),
+            llm.LLMContext(),
+        )
+
+    assert client.calls == []
+
+
+def test_search_project_guidance_scope_and_summary_behavior() -> None:
+    """Prompt guidance scopes project search to JARVIS project knowledge."""
+    prompt = build_api_prompt("Canonical runtime identity.")
+
+    assert "first consider search_project" in prompt
+    assert "JARVIS architecture, roadmap, development, project decisions" in prompt
+    assert "open items, engineering discussions" in prompt
+    assert "implementation history, or project documentation" in prompt
+    assert "Do not use search_project for general knowledge" in prompt
+    assert "internet search, Windows filesystem search, or Home Assistant entity" in prompt
+    assert "Summarize search results naturally" in prompt
+
+
+def test_search_project_guidance_prefers_single_refinement_not_search_chains() -> None:
+    """Prompt guidance avoids repeated speculative project searches."""
+    prompt = build_api_prompt("Canonical runtime identity.")
+
+    assert "Avoid repeated search_project calls" in prompt
+    assert "perform at most one additional focused search" in prompt
+    assert "Avoid chains of three or more speculative searches" in prompt
+
+
+def test_search_project_guidance_preserves_specialized_tool_selection() -> None:
+    """Prompt guidance keeps structured tools preferred for exact requests."""
+    prompt = build_api_prompt("Canonical runtime identity.")
+    description = SearchProjectTool(FakeClient()).description
+
+    assert "Specialized tools such as find_decision" in prompt
+    assert "inspect_project_module" in prompt
+    assert "get_roadmap_items" in prompt
+    assert "get_runtime_info" in prompt
+    assert "remain better when the user clearly asks" in prompt
+    assert "Use specialized tools instead" in description
+    assert "one specific ADR decision" in description
+    assert "one specific implementation item" in description
+    assert "Windows runtime status" in description
+
+
+def test_search_project_guidance_uses_natural_source_language() -> None:
+    """Prompt guidance hides internal filenames unless the user asks."""
+    prompt = build_api_prompt("Canonical runtime identity.")
+
+    assert "The project documentation describes" in prompt
+    assert "The current roadmap plans" in prompt
+    assert "The engineering notes indicate" in prompt
+    assert "Do not say 'I searched ROADMAP.md'" in prompt
+    assert "I searched OPEN_ITEMS.md" in prompt
