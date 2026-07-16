@@ -59,6 +59,8 @@ The Companion Integration currently registers these Home Assistant LLM tools:
 
 Each tool uses a fixed backend capability mapping in the Companion and returns the Project-JARVIS Capability API response. Project-JARVIS owns routing, orchestration and execution.
 
+Capability discovery is informational. Windows Agent capabilities are the operations the Agent implements and advertises; discovering them does not grant Claude permission to execute every listed operation. Through the current Home Assistant Companion, Claude can directly invoke only the explicitly exposed Companion tools above.
+
 Repository filesystem tools are limited to repository IDs explicitly approved in Project-JARVIS configuration and repository-relative paths. They do not provide arbitrary filesystem access, absolute path access, or write operations. Project-JARVIS owns authorization and routing; the Windows Agent owns final repository-root and path enforcement.
 
 Runtime status results prove only current reachability and reported health status. They do not prove long-term stability, screen state, user presence, lock state, workload, or standby details.

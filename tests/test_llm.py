@@ -324,13 +324,54 @@ async def test_runtime_capabilities_tool_has_no_parameters_and_fixed_mapping() -
 def test_runtime_guidance_requires_fresh_status_checks_without_stability_claims() -> None:
     """Prompt guidance keeps runtime status claims narrow."""
     prompt = build_api_prompt("Canonical runtime identity.")
+    description = GetRuntimeStatusTool(FakeClient()).description
 
     assert "Status questions require a fresh tool call" in prompt
     assert "reachable Windows Agent means the Windows PC is currently running" in prompt
     assert "does not prove long-term stability" in prompt
     assert "screen state, user presence, lock state, workload, or standby details" in prompt
     assert "Do not claim the agent is stable" in prompt
+    assert "currently reachable and reports status ok" in prompt
+    assert "currently reachable and reports status ok" in description
+    assert "runs stably" not in prompt
+    assert "is permanently stable" not in prompt
+    assert "has no problems" not in prompt
     assert "direct Windows Agent" not in prompt
+
+
+def test_capability_guidance_distinguishes_agent_inventory_from_companion_tools() -> None:
+    """Capability questions separate implementation inventory from tool access."""
+    prompt = build_api_prompt("Canonical runtime identity.")
+    description = GetRuntimeCapabilitiesTool(FakeClient()).description
+
+    assert "distinguish three layers clearly" in prompt
+    assert "Windows Agent capabilities are operations implemented and advertised" in prompt
+    assert "discovering them does not grant permission" in prompt
+    assert "does not mean Claude can call them" in prompt
+    assert "Project-JARVIS routed capabilities" in prompt
+    assert "subject to authorization and policy" in prompt
+    assert "Companion tools are the only operations Claude can directly invoke" in prompt
+    assert "fixed allowlisted mappings only" in prompt
+    assert "The Windows Agent implements these capabilities" in prompt
+    assert "I can directly use only the explicitly exposed tools" in prompt
+    assert "Agent's implemented capability inventory" in prompt
+    assert "does not mean every listed capability is directly callable" in description
+
+
+def test_capability_guidance_does_not_expose_write_git_task_scope_or_audit() -> None:
+    """Discovery guidance prevents unsupported capabilities from sounding callable."""
+    prompt = build_api_prompt("Canonical runtime identity.")
+
+    assert "runtime status" in prompt
+    assert "runtime information" in prompt
+    assert "runtime capability discovery" in prompt
+    assert "deterministic Project Search" in prompt
+    assert "approved repository file existence checks" in prompt
+    assert "approved repository directory listing" in prompt
+    assert "approved small UTF-8 repository file reads" in prompt
+    assert "Do not describe write, Git, Task Scope, audit" in prompt
+    assert "directly callable unless a dedicated Companion tool exists" in prompt
+    assert "write, Git, Task Scope, audit" in prompt
 
 
 def test_runtime_tools_do_not_route_or_contact_windows_agent_directly() -> None:

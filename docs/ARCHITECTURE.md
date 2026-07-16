@@ -135,6 +135,8 @@ The runtime tools are read-only and accept no parameters:
 * `get_runtime_info` forwards runtime information requests to Project-JARVIS.
 * `get_runtime_capabilities` forwards Windows Agent capability listing requests to Project-JARVIS.
 
+Capability discovery is informational. A Windows Agent capability inventory describes operations implemented and advertised by the Agent; it is not the same as Claude tool availability. Companion exposure remains explicit and allowlisted through the tools registered in this integration.
+
 No tool contains Project Knowledge, Windows Agent, routing, or orchestration business logic. Project-JARVIS owns routing and capability execution.
 
 ---
