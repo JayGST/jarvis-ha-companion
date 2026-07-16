@@ -56,6 +56,7 @@ The Companion Integration currently registers these Home Assistant LLM tools:
 * `get_runtime_status` - read-only current reachability and health check for questions such as whether the Windows Agent, main PC, or desktop runtime is online.
 * `get_runtime_info` - read-only Windows Agent runtime information, such as hostname, operating system, platform, architecture, and Python runtime information.
 * `get_runtime_capabilities` - read-only list of Windows Agent capabilities or available Windows Agent functions.
+* `get_system_metrics` - read-only live Windows PC metrics snapshot, such as CPU, GPU, RAM, drive usage, uptime, and network totals.
 
 Each tool uses a fixed backend capability mapping in the Companion and returns the Project-JARVIS Capability API response. Project-JARVIS owns routing, orchestration and execution.
 
@@ -64,6 +65,8 @@ Capability discovery is informational. Windows Agent capabilities are the operat
 Repository filesystem tools are limited to repository IDs explicitly approved in Project-JARVIS configuration and repository-relative paths. They do not provide arbitrary filesystem access, absolute path access, or write operations. Project-JARVIS owns authorization and routing; the Windows Agent owns final repository-root and path enforcement.
 
 Runtime status results prove only current reachability and reported health status. They do not prove long-term stability, screen state, user presence, lock state, workload, or standby details.
+
+System metrics are collected by the Windows Agent and routed by Project-JARVIS through the fixed `system.metrics` mapping. The Companion performs no local metric collection. Metric responses should include only values relevant to the user's question; optional or nullable metrics may be unavailable and must not be treated as zero.
 
 ---
 

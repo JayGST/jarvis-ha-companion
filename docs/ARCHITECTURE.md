@@ -116,6 +116,7 @@ The Companion Integration currently registers multiple LLM tools, including Proj
 * `get_runtime_status`
 * `get_runtime_info`
 * `get_runtime_capabilities`
+* `get_system_metrics`
 
 Each tool forwards directly to the matching Add-on capability.
 
@@ -134,8 +135,11 @@ The runtime tools are read-only and accept no parameters:
 * `get_runtime_status` forwards current reachability and health checks to Project-JARVIS.
 * `get_runtime_info` forwards runtime information requests to Project-JARVIS.
 * `get_runtime_capabilities` forwards Windows Agent capability listing requests to Project-JARVIS.
+* `get_system_metrics` forwards live system-metrics snapshot requests to Project-JARVIS.
 
 Capability discovery is informational. A Windows Agent capability inventory describes operations implemented and advertised by the Agent; it is not the same as Claude tool availability. Companion exposure remains explicit and allowlisted through the tools registered in this integration.
+
+`get_system_metrics` is a dedicated read-only adapter for the fixed `system.metrics` capability. Project-JARVIS owns routing, the Windows Agent owns metric collection, and the Companion performs no local collection or interpretation. Optional metrics may be unavailable, and responses should include only the metrics relevant to the user's question unless raw metrics are explicitly requested.
 
 No tool contains Project Knowledge, Windows Agent, routing, or orchestration business logic. Project-JARVIS owns routing and capability execution.
 

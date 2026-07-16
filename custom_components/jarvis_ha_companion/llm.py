@@ -51,7 +51,8 @@ CAPABILITY_GUIDANCE = (
     "implementation history, or project documentation, first consider "
     "search_project. Specialized tools such as find_decision, "
     "inspect_project_module, get_roadmap_items, get_runtime_info, and "
-    "get_runtime_capabilities remain better when the user clearly asks for "
+    "get_runtime_capabilities, and get_system_metrics remain better when "
+    "the user clearly asks for "
     "that exact structured information. Do not use search_project for "
     "general knowledge, internet search, Windows filesystem search, or Home "
     "Assistant entity queries. Avoid repeated search_project calls. If the "
@@ -90,6 +91,22 @@ CAPABILITY_GUIDANCE = (
     "information. Use get_runtime_capabilities when the user asks what the "
     "Windows Agent can do, which capabilities it exposes, or which Windows "
     "Agent functions are available. "
+    "Use get_system_metrics for questions about current Windows PC metrics "
+    "such as CPU usage, CPU temperature, GPU usage, GPU temperature, RAM "
+    "usage, drive usage, free disk space, uptime, network totals, or overall "
+    "current PC status. get_runtime_status checks current reachability and "
+    "reported health; get_system_metrics retrieves current system "
+    "measurements. Do not use get_system_metrics for project documentation, "
+    "historical trends, Home Assistant entity values, process lists, "
+    "services, files, Git, or long-term stability claims. The tool returns "
+    "one complete live snapshot, but answer only with metrics relevant to "
+    "the user's question. Do not dump the raw complete result unless the "
+    "user explicitly asks for all raw metrics. Nullable or missing metric "
+    "values mean unavailable, not zero; do not infer values, and do not "
+    "describe unavailable sensors as errors when the capability call itself "
+    "succeeded. Metrics alone do not prove long-term stability, absence of "
+    "problems, screen state, user presence, standby state, or future "
+    "performance. "
     "When answering capability questions, distinguish three layers clearly. "
     "Windows Agent capabilities are operations implemented and advertised by "
     "the Windows Agent; discovering them does not grant permission and does "
@@ -104,9 +121,10 @@ CAPABILITY_GUIDANCE = (
     "such as 'The Windows Agent implements these capabilities. Through the "
     "current Home Assistant Companion, I can directly use only the explicitly "
     "exposed tools.' The currently exposed categories are runtime status, "
-    "runtime information, runtime capability discovery, deterministic Project "
-    "Search, approved repository file existence checks, approved repository "
-    "directory listing, and approved small UTF-8 repository file reads. Do "
+    "runtime information, runtime capability discovery, live system metrics, "
+    "deterministic Project Search, approved repository file existence checks, "
+    "approved repository directory listing, and approved small UTF-8 "
+    "repository file reads. Do "
     "not describe write, Git, Task Scope, audit, or other discovered Windows "
     "Agent capabilities as directly callable unless a dedicated Companion "
     "tool exists. "
@@ -153,6 +171,7 @@ class JarvisLLMAPI(llm.API):
                 GetRuntimeStatusTool(self._client),
                 GetRuntimeInfoTool(self._client),
                 GetRuntimeCapabilitiesTool(self._client),
+                GetSystemMetricsTool(self._client),
             ],
         )
 
@@ -584,6 +603,40 @@ class GetRuntimeCapabilitiesTool(llm.Tool):
         """Call the JARVIS Add-on runtime capabilities capability."""
         return await self._client.execute_capability(
             capability="system.capabilities",
+            parameters={},
+        )
+
+
+class GetSystemMetricsTool(llm.Tool):
+    """Tool for retrieving a live desktop runtime metrics snapshot."""
+
+    name = "get_system_metrics"
+    description = (
+        "Use for current Windows PC metrics such as CPU usage, CPU "
+        "temperature, GPU usage, GPU temperature, RAM usage, drive usage, "
+        "free disk space, uptime, network totals, or overall current PC "
+        "status. This retrieves one live system-measurements snapshot through "
+        "Project-JARVIS. Answer only with metrics relevant to the user's "
+        "question; do not dump the full raw result unless explicitly asked. "
+        "Nullable or missing metric values mean unavailable, not zero. Do "
+        "not use for project documentation, historical trends, Home "
+        "Assistant entity values, process lists, services, files, Git, or "
+        "long-term stability claims. This is read-only."
+    )
+    parameters = vol.Schema({})
+
+    def __init__(self, client: JarvisAddonClient) -> None:
+        self._client = client
+
+    async def async_call(
+        self,
+        hass: HomeAssistant,
+        tool_input: llm.ToolInput,
+        llm_context: llm.LLMContext,
+    ) -> JsonObjectType:
+        """Call the JARVIS Add-on runtime metrics capability."""
+        return await self._client.execute_capability(
+            capability="system.metrics",
             parameters={},
         )
 

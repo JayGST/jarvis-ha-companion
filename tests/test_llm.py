@@ -18,6 +18,7 @@ from custom_components.jarvis_ha_companion.llm import (
     GetRuntimeCapabilitiesTool,
     GetRuntimeInfoTool,
     GetRuntimeStatusTool,
+    GetSystemMetricsTool,
     InspectProjectModuleTool,
     JarvisLLMAPI,
     ListRepositoryDirectoryTool,
@@ -108,6 +109,7 @@ async def test_registered_llm_tools_forward_to_existing_capabilities() -> None:
         "get_runtime_status",
         "get_runtime_info",
         "get_runtime_capabilities",
+        "get_system_metrics",
     }
     api = JarvisLLMAPI(object(), client, "Canonical runtime identity.")
     instance = await api.async_get_api_instance(llm.LLMContext())
@@ -194,6 +196,11 @@ async def test_registered_llm_tools_forward_to_existing_capabilities() -> None:
         llm.ToolInput({}),
         llm.LLMContext(),
     )
+    system_metrics_result = await GetSystemMetricsTool(client).async_call(
+        object(),
+        llm.ToolInput({}),
+        llm.LLMContext(),
+    )
 
     assert inspect_result["result"]["capability"] == "inspect_project_module"
     assert capabilities_result["result"]["capability"] == "list_capabilities"
@@ -211,6 +218,7 @@ async def test_registered_llm_tools_forward_to_existing_capabilities() -> None:
         runtime_capabilities_result["result"]["capability"]
         == "system.capabilities"
     )
+    assert system_metrics_result["result"]["capability"] == "system.metrics"
     assert client.calls == [
         ("inspect_project_module", {"module_name": "Windows Agent"}),
         ("list_capabilities", {}),
@@ -234,6 +242,7 @@ async def test_registered_llm_tools_forward_to_existing_capabilities() -> None:
         ("system.health", {}),
         ("system.info", {}),
         ("system.capabilities", {}),
+        ("system.metrics", {}),
     ]
 
 
@@ -321,6 +330,37 @@ async def test_runtime_capabilities_tool_has_no_parameters_and_fixed_mapping() -
     }
 
 
+@pytest.mark.asyncio
+async def test_system_metrics_tool_has_no_parameters_and_fixed_mapping() -> None:
+    """System metrics cannot accept user-controlled capabilities or parameters."""
+    client = FakeClient()
+    tool = GetSystemMetricsTool(client)
+
+    result = await tool.async_call(
+        object(),
+        llm.ToolInput(
+            {
+                "capability": "filesystem.write_file",
+                "parameters": {"path": "C:/"},
+                "provider": "windows-agent",
+                "owner": "companion",
+                "routing": "direct",
+                "endpoint": "http://127.0.0.1",
+            }
+        ),
+        llm.LLMContext(),
+    )
+
+    assert tool.parameters.schema == {}
+    assert client.calls == [("system.metrics", {})]
+    assert result == {
+        "result": {
+            "capability": "system.metrics",
+            "parameters": {},
+        }
+    }
+
+
 def test_runtime_guidance_requires_fresh_status_checks_without_stability_claims() -> None:
     """Prompt guidance keeps runtime status claims narrow."""
     prompt = build_api_prompt("Canonical runtime identity.")
@@ -365,6 +405,7 @@ def test_capability_guidance_does_not_expose_write_git_task_scope_or_audit() -> 
     assert "runtime status" in prompt
     assert "runtime information" in prompt
     assert "runtime capability discovery" in prompt
+    assert "live system metrics" in prompt
     assert "deterministic Project Search" in prompt
     assert "approved repository file existence checks" in prompt
     assert "approved repository directory listing" in prompt
@@ -372,6 +413,56 @@ def test_capability_guidance_does_not_expose_write_git_task_scope_or_audit() -> 
     assert "Do not describe write, Git, Task Scope, audit" in prompt
     assert "directly callable unless a dedicated Companion tool exists" in prompt
     assert "write, Git, Task Scope, audit" in prompt
+
+
+def test_system_metrics_guidance_selects_live_metrics_questions() -> None:
+    """Prompt guidance routes current PC metric questions to metrics."""
+    prompt = build_api_prompt("Canonical runtime identity.")
+    description = GetSystemMetricsTool(FakeClient()).description
+
+    assert "Use get_system_metrics for questions about current Windows PC metrics" in prompt
+    assert "CPU usage" in prompt
+    assert "CPU temperature" in prompt
+    assert "GPU usage" in prompt
+    assert "GPU temperature" in prompt
+    assert "RAM usage" in prompt
+    assert "drive usage" in prompt
+    assert "free disk space" in prompt
+    assert "uptime" in prompt
+    assert "network totals" in prompt
+    assert "overall current PC status" in prompt
+    assert "current Windows PC metrics" in description
+
+
+def test_system_metrics_guidance_answers_selectively_and_handles_nulls() -> None:
+    """Metric responses stay focused and treat nullable values as unavailable."""
+    prompt = build_api_prompt("Canonical runtime identity.")
+    description = GetSystemMetricsTool(FakeClient()).description
+
+    assert "answer only with metrics relevant to the user's question" in prompt
+    assert "Do not dump the raw complete result" in prompt
+    assert "unless the user explicitly asks for all raw metrics" in prompt
+    assert "Nullable or missing metric values mean unavailable, not zero" in prompt
+    assert "do not infer values" in prompt
+    assert "do not describe unavailable sensors as errors" in prompt
+    assert "Answer only with metrics relevant" in description
+    assert "unavailable, not zero" in description
+
+
+def test_system_metrics_guidance_keeps_health_and_metrics_distinct() -> None:
+    """Runtime health checks and system measurements remain separate tools."""
+    prompt = build_api_prompt("Canonical runtime identity.")
+    description = GetSystemMetricsTool(FakeClient()).description
+
+    assert "get_runtime_status checks current reachability and reported health" in prompt
+    assert "get_system_metrics retrieves current system measurements" in prompt
+    assert "Do not use get_system_metrics for project documentation" in prompt
+    assert "historical trends, Home Assistant entity values, process lists" in prompt
+    assert "services, files, Git, or long-term stability claims" in prompt
+    assert "Metrics alone do not prove long-term stability" in prompt
+    assert "absence of problems, screen state, user presence, standby state" in prompt
+    assert "future performance" in prompt
+    assert "process lists, services, files, Git" in description
 
 
 def test_runtime_tools_do_not_route_or_contact_windows_agent_directly() -> None:
@@ -382,19 +473,24 @@ def test_runtime_tools_do_not_route_or_contact_windows_agent_directly() -> None:
             GetRuntimeStatusTool,
             GetRuntimeInfoTool,
             GetRuntimeCapabilitiesTool,
+            GetSystemMetricsTool,
         )
     )
 
-    assert source.count("execute_capability(") == 3
+    assert source.count("execute_capability(") == 4
     assert "system.health" in source
     assert "system.info" in source
     assert "system.capabilities" in source
+    assert "system.metrics" in source
     assert "async_get_clientsession" not in source
     assert "requests" not in source
     assert "httpx" not in source
     assert "subprocess" not in source
+    assert "psutil" not in source
+    assert "win32" not in source
     assert "provider" not in source
     assert "route" not in source.lower()
+    assert "filesystem.write" not in source
 
 
 @pytest.mark.asyncio
@@ -509,6 +605,7 @@ def test_search_project_guidance_preserves_specialized_tool_selection() -> None:
     assert "get_roadmap_items" in prompt
     assert "get_runtime_info" in prompt
     assert "remain better when the user clearly asks" in prompt
+    assert "get_system_metrics" in prompt
     assert "Use specialized tools instead" in description
     assert "one specific ADR decision" in description
     assert "one specific implementation item" in description
