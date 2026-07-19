@@ -17,7 +17,9 @@ class JarvisAddonClient:
 
     CONTRACT_VERSION = 1
     EXECUTE_PATH = "/api/v1/capabilities/execute"
+    ACTIVATIONS_PATH = "/api/v1/activations"
     REQUEST_TIMEOUT_SECONDS = 10
+    ACTIVATION_STATUS_CODES = {200, 202, 400, 403, 404, 409, 410, 503}
 
     def __init__(
         self,
@@ -40,25 +42,79 @@ class JarvisAddonClient:
             "parameters": parameters,
         }
 
-        session = async_get_clientsession(self._hass)
+        return await self._request_json(
+            method="POST",
+            path=self.EXECUTE_PATH,
+            json_body=request,
+            allowed_statuses={200},
+            activation_request=False,
+        )
 
-        try:
-            async with asyncio.timeout(self.REQUEST_TIMEOUT_SECONDS):
-                response = await session.post(
-                    f"{self._base_url}{self.EXECUTE_PATH}",
-                    json=request,
-                )
-                response.raise_for_status()
-                payload = await response.json()
-        except TimeoutError as error:
-            raise JarvisAddonClientError("Timed out calling JARVIS Add-on.") from error
-        except ClientError as error:
-            raise JarvisAddonClientError("Failed to call JARVIS Add-on.") from error
+    async def get_activation(self, activation_id: str) -> dict[str, Any]:
+        """Fetch a safe public activation status snapshot."""
+        return await self._request_json(
+            method="GET",
+            path=f"{self.ACTIVATIONS_PATH}/{activation_id}",
+            allowed_statuses=self.ACTIVATION_STATUS_CODES,
+            activation_request=True,
+        )
 
-        if not isinstance(payload, dict):
-            raise JarvisAddonClientError("JARVIS Add-on returned an invalid response.")
+    async def confirm_activation(
+        self,
+        *,
+        activation_id: str,
+        confirmation_token: str,
+    ) -> dict[str, Any]:
+        """Confirm a pending activation with its one-time credential."""
+        return await self._request_json(
+            method="POST",
+            path=f"{self.ACTIVATIONS_PATH}/{activation_id}/confirm",
+            json_body={
+                "contract_version": self.CONTRACT_VERSION,
+                "confirmation_token": confirmation_token,
+            },
+            allowed_statuses=self.ACTIVATION_STATUS_CODES,
+            activation_request=True,
+        )
 
-        return payload
+    async def retry_activation(
+        self,
+        *,
+        activation_id: str,
+        retry_token: str,
+    ) -> dict[str, Any]:
+        """Accept a retry decision for a retry-waiting activation."""
+        return await self._request_json(
+            method="POST",
+            path=f"{self.ACTIVATIONS_PATH}/{activation_id}/retry",
+            json_body={
+                "contract_version": self.CONTRACT_VERSION,
+                "retry_token": retry_token,
+            },
+            allowed_statuses=self.ACTIVATION_STATUS_CODES,
+            activation_request=True,
+        )
+
+    async def cancel_activation(self, activation_id: str) -> dict[str, Any]:
+        """Cancel an activation before Project-JARVIS reaches the point of no return."""
+        return await self._request_json(
+            method="POST",
+            path=f"{self.ACTIVATIONS_PATH}/{activation_id}/cancel",
+            json_body={
+                "contract_version": self.CONTRACT_VERSION,
+            },
+            allowed_statuses=self.ACTIVATION_STATUS_CODES,
+            activation_request=True,
+        )
+
+    async def get_activation_result(self, activation_id: str) -> dict[str, Any]:
+        """Fetch a retained completed capability result for an activation."""
+        return await self._request_json(
+            method="GET",
+            path=f"{self.ACTIVATIONS_PATH}/{activation_id}/result",
+            allowed_statuses=self.ACTIVATION_STATUS_CODES,
+            activation_request=True,
+        )
 
     async def get_identity_prompt(self) -> IdentityPrompt:
         """Fetch the canonical runtime JARVIS identity prompt from the Add-on."""
@@ -91,6 +147,55 @@ class JarvisAddonClient:
             else None,
         )
 
+    async def _request_json(
+        self,
+        *,
+        method: str,
+        path: str,
+        allowed_statuses: set[int],
+        activation_request: bool,
+        json_body: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        session = async_get_clientsession(self._hass)
+
+        try:
+            async with asyncio.timeout(self.REQUEST_TIMEOUT_SECONDS):
+                response = await session.request(
+                    method,
+                    f"{self._base_url}{path}",
+                    json=json_body,
+                )
+                if response.status not in allowed_statuses:
+                    response.raise_for_status()
+                payload = await response.json()
+        except TimeoutError as error:
+            raise JarvisAddonClientError("Timed out calling JARVIS Add-on.") from error
+        except ClientError as error:
+            raise JarvisAddonClientError("Failed to call JARVIS Add-on.") from error
+
+        if not isinstance(payload, dict):
+            raise JarvisAddonClientError("JARVIS Add-on returned an invalid response.")
+
+        if activation_request and payload.get("success") is False:
+            error_payload = payload.get("error")
+            code = None
+            message = None
+
+            if isinstance(error_payload, dict):
+                raw_code = error_payload.get("code")
+                raw_message = error_payload.get("message")
+                code = raw_code if isinstance(raw_code, str) else None
+                message = raw_message if isinstance(raw_message, str) else None
+
+            raise JarvisActivationAPIError(
+                status=response.status,
+                code=code or "ACTIVATION_API_ERROR",
+                message=message or "Activation API request failed.",
+                payload=payload,
+            )
+
+        return payload
+
 
 @dataclass(frozen=True)
 class IdentityPrompt:
@@ -103,3 +208,20 @@ class IdentityPrompt:
 
 class JarvisAddonClientError(Exception):
     """Raised when the JARVIS Add-on Capability API cannot be reached."""
+
+
+class JarvisActivationAPIError(JarvisAddonClientError):
+    """Raised for structured Activation API error responses."""
+
+    def __init__(
+        self,
+        *,
+        status: int,
+        code: str,
+        message: str,
+        payload: dict[str, Any],
+    ) -> None:
+        self.status = status
+        self.code = code
+        self.payload = payload
+        super().__init__(message)

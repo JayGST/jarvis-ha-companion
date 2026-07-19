@@ -57,6 +57,11 @@ The Companion Integration currently registers these Home Assistant LLM tools:
 * `get_runtime_info` - read-only Windows Agent runtime information, such as hostname, operating system, platform, architecture, and Python runtime information.
 * `get_runtime_capabilities` - read-only list of Windows Agent capabilities or available Windows Agent functions.
 * `get_system_metrics` - read-only live Windows PC metrics snapshot, such as CPU, GPU, RAM, drive usage, uptime, and network totals.
+* `launch_application` - starts an approved registered Windows application; currently limited to Visual Studio, Notepad, Chrome, Discord, Steam and Obsidian.
+* `get_activation_status` - checks the current status of the active Project-JARVIS provider activation, including natural follow-up questions such as whether the PC is ready or whether everything finished.
+* `confirm_activation` - confirms one pending provider activation after explicit user approval.
+* `retry_activation` - accepts one retry decision for a retry-waiting activation after explicit user approval when a retry token is available.
+* `cancel_activation` - cancels one pending or retry-waiting activation when the user declines or stops the request.
 
 Each tool uses a fixed backend capability mapping in the Companion and returns the Project-JARVIS Capability API response. Project-JARVIS owns routing, orchestration and execution.
 
@@ -67,6 +72,12 @@ Repository filesystem tools are limited to repository IDs explicitly approved in
 Runtime status results prove only current reachability and reported health status. They do not prove long-term stability, screen state, user presence, lock state, workload, or standby details.
 
 System metrics are collected by the Windows Agent and routed by Project-JARVIS through the fixed `system.metrics` mapping. The Companion performs no local metric collection. Metric responses should include only values relevant to the user's question; optional or nullable metrics may be unavailable and must not be treated as zero.
+
+Application launch is routed by Project-JARVIS through the fixed `application.launch` mapping. The Companion exposes only approved application ID enum values and does not accept paths, shortcut paths, arguments, working directories, environment variables, discovery settings, local overrides or direct Windows Agent communication.
+
+Provider activation is owned by Project-JARVIS. When a tool response starts or requires activation, the Companion stores the returned activation ID, conversation context, user-facing summary and any one-time confirmation or retry token in memory only. Natural follow-up requests such as "Is my PC ready?", "Is everything finished?", "Continue", or "Cancel it" are resolved against the tracked activation registry. If exactly one active activation exists, the Companion uses it automatically. If multiple active activations match, Claude should ask which request the user means using the stored summaries, not activation IDs.
+
+Home Assistant conversations are request/response. The Companion does not assume it can speak later without another user message. It does not implement persistence, notifications, WebSockets or autonomous background conversation resumption. Completed activation results are fetched from Project-JARVIS exactly once when status is checked and `result_available` is true, then reused from memory for later follow-up checks.
 
 ---
 

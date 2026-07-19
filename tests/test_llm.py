@@ -10,9 +10,12 @@ from homeassistant.helpers import llm
 
 from custom_components.jarvis_ha_companion.llm import (
     CAPABILITY_GUIDANCE,
+    CancelActivationTool,
     COMPANION_TOOL_INSTRUCTIONS,
     FALLBACK_IDENTITY_PROMPT,
+    ConfirmActivationTool,
     FindDecisionTool,
+    GetActivationStatusTool,
     GetIdeasTool,
     GetRoadmapItemsTool,
     GetRuntimeCapabilitiesTool,
@@ -21,11 +24,13 @@ from custom_components.jarvis_ha_companion.llm import (
     GetSystemMetricsTool,
     InspectProjectModuleTool,
     JarvisLLMAPI,
+    LaunchApplicationTool,
     ListRepositoryDirectoryTool,
     ListCapabilitiesTool,
     ListExtensionsTool,
     ReadRepositoryFileTool,
     RepositoryFileExistsTool,
+    RetryActivationTool,
     SearchProjectTool,
     build_api_prompt,
 )
@@ -43,6 +48,29 @@ class FakeClient:
     ) -> dict[str, object]:
         self.calls.append((capability, parameters))
         return {"result": {"capability": capability, "parameters": parameters}}
+
+
+class FakeActivationWorkflow:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    async def observe_capability_response(
+        self,
+        response: dict[str, object],
+        *,
+        conversation_context_id: str | None,
+        capability_name: str,
+        user_facing_summary: str,
+    ) -> dict[str, object]:
+        self.calls.append(
+            {
+                "response": response,
+                "conversation_context_id": conversation_context_id,
+                "capability_name": capability_name,
+                "user_facing_summary": user_facing_summary,
+            }
+        )
+        return response
 
 
 def test_build_api_prompt_includes_runtime_identity_in_order() -> None:
@@ -110,6 +138,11 @@ async def test_registered_llm_tools_forward_to_existing_capabilities() -> None:
         "get_runtime_info",
         "get_runtime_capabilities",
         "get_system_metrics",
+        "launch_application",
+        "get_activation_status",
+        "confirm_activation",
+        "retry_activation",
+        "cancel_activation",
     }
     api = JarvisLLMAPI(object(), client, "Canonical runtime identity.")
     instance = await api.async_get_api_instance(llm.LLMContext())
@@ -201,6 +234,21 @@ async def test_registered_llm_tools_forward_to_existing_capabilities() -> None:
         llm.ToolInput({}),
         llm.LLMContext(),
     )
+    launch_result = await LaunchApplicationTool(client).async_call(
+        object(),
+        llm.ToolInput({"application_id": "visual_studio"}),
+        llm.LLMContext(),
+    )
+    notepad_result = await LaunchApplicationTool(client).async_call(
+        object(),
+        llm.ToolInput({"application_id": "notepad"}),
+        llm.LLMContext(),
+    )
+    chrome_result = await LaunchApplicationTool(client).async_call(
+        object(),
+        llm.ToolInput({"application_id": "chrome"}),
+        llm.LLMContext(),
+    )
 
     assert inspect_result["result"]["capability"] == "inspect_project_module"
     assert capabilities_result["result"]["capability"] == "list_capabilities"
@@ -219,6 +267,9 @@ async def test_registered_llm_tools_forward_to_existing_capabilities() -> None:
         == "system.capabilities"
     )
     assert system_metrics_result["result"]["capability"] == "system.metrics"
+    assert launch_result["result"]["capability"] == "application.launch"
+    assert notepad_result["result"]["capability"] == "application.launch"
+    assert chrome_result["result"]["capability"] == "application.launch"
     assert client.calls == [
         ("inspect_project_module", {"module_name": "Windows Agent"}),
         ("list_capabilities", {}),
@@ -243,6 +294,9 @@ async def test_registered_llm_tools_forward_to_existing_capabilities() -> None:
         ("system.info", {}),
         ("system.capabilities", {}),
         ("system.metrics", {}),
+        ("application.launch", {"application_id": "visual_studio"}),
+        ("application.launch", {"application_id": "notepad"}),
+        ("application.launch", {"application_id": "chrome"}),
     ]
 
 
@@ -361,6 +415,96 @@ async def test_system_metrics_tool_has_no_parameters_and_fixed_mapping() -> None
     }
 
 
+@pytest.mark.asyncio
+async def test_launch_application_tool_uses_application_enum_and_fixed_mapping() -> None:
+    """Application launch exposes only the approved application identifier."""
+    client = FakeClient()
+    tool = LaunchApplicationTool(client)
+    schema_keys = {key.key for key in tool.parameters.schema}
+
+    result = await tool.async_call(
+        object(),
+        llm.ToolInput(
+            {
+                "application_id": "visual_studio",
+                "path": "C:/Program Files/App/app.exe",
+                "arguments": ["--unsafe"],
+                "working_directory": "C:/",
+                "environment": {"SECRET": "value"},
+                "capability": "filesystem.write_text_file",
+                "provider": "windows-agent",
+            }
+        ),
+        llm.LLMContext(),
+    )
+
+    assert schema_keys == {"application_id"}
+    assert tool.parameters({"application_id": "visual_studio"}) == {
+        "application_id": "visual_studio"
+    }
+    assert tool.parameters({"application_id": "notepad"}) == {
+        "application_id": "notepad"
+    }
+    for application_id in ("chrome", "discord", "steam", "obsidian"):
+        assert tool.parameters({"application_id": application_id}) == {
+            "application_id": application_id
+        }
+    with pytest.raises(Exception):
+        tool.parameters({"application_id": "visual_studio_code"})
+    assert client.calls == [("application.launch", {"application_id": "visual_studio"})]
+    assert result == {
+        "result": {
+            "capability": "application.launch",
+            "parameters": {"application_id": "visual_studio"},
+        }
+    }
+
+
+@pytest.mark.asyncio
+async def test_launch_application_tool_passes_application_activation_summary() -> None:
+    """The same launch adapter supplies resource-specific activation summaries."""
+    client = FakeClient()
+    workflow = FakeActivationWorkflow()
+    tool = LaunchApplicationTool(client, workflow)
+
+    await tool.async_call(
+        object(),
+        llm.ToolInput({"application_id": "notepad"}),
+        llm.LLMContext(),
+    )
+
+    assert client.calls == [("application.launch", {"application_id": "notepad"})]
+    assert workflow.calls[0]["capability_name"] == "application.launch"
+    assert workflow.calls[0]["user_facing_summary"] == "Open Notepad"
+
+
+def test_launch_application_guidance_supports_notepad_and_rejects_vscode_claims() -> None:
+    """Prompt guidance narrows launch phrasing and avoids VS Code support."""
+    prompt = build_api_prompt("Canonical runtime identity.")
+    description = LaunchApplicationTool(FakeClient()).description
+
+    assert "Use launch_application" in prompt
+    assert "visual_studio" in prompt
+    assert "notepad" in prompt
+    assert "chrome" in prompt
+    assert "discord" in prompt
+    assert "steam" in prompt
+    assert "obsidian" in prompt
+    assert "Windows Editor" in prompt
+    assert "Do not treat 'VS' as sufficient" in prompt
+    assert "Visual Studio Code" in prompt
+    assert "Do not claim support for Visual Studio Code" in prompt
+    assert "paths, arguments, working directories" in prompt
+    assert "discovery settings, or local overrides" in prompt
+    assert "Mach Visual Studio auf" in description
+    assert "den Editor" in description
+    assert "Chrome" in description
+    assert "Discord" in description
+    assert "Steam" in description
+    assert "Obsidian" in description
+    assert "Visual Studio Code" in description
+
+
 def test_runtime_guidance_requires_fresh_status_checks_without_stability_claims() -> None:
     """Prompt guidance keeps runtime status claims narrow."""
     prompt = build_api_prompt("Canonical runtime identity.")
@@ -477,7 +621,7 @@ def test_runtime_tools_do_not_route_or_contact_windows_agent_directly() -> None:
         )
     )
 
-    assert source.count("execute_capability(") == 4
+    assert source.count("_execute_capability(") == 4
     assert "system.health" in source
     assert "system.info" in source
     assert "system.capabilities" in source
@@ -491,6 +635,30 @@ def test_runtime_tools_do_not_route_or_contact_windows_agent_directly() -> None:
     assert "provider" not in source
     assert "route" not in source.lower()
     assert "filesystem.write" not in source
+
+
+def test_launch_application_tool_has_no_direct_windows_or_process_access() -> None:
+    """Launch requests stay behind Project-JARVIS fixed capability execution."""
+    source = inspect.getsource(LaunchApplicationTool)
+
+    assert source.count("_execute_capability(") == 1
+    assert "application.launch" in source
+    assert "visual_studio" in source
+    assert "notepad" in source
+    assert "chrome" in source
+    assert "discord" in source
+    assert "steam" in source
+    assert "obsidian" in source
+    assert "launch_notepad" not in source
+    assert "launch_chrome" not in source
+    assert "subprocess" not in source
+    assert "Popen" not in source
+    assert "async_get_clientsession" not in source
+    assert "requests." not in source
+    assert "httpx" not in source
+    assert "provider" not in source
+    assert "route" not in source.lower()
+    assert "working_directory" not in source
 
 
 @pytest.mark.asyncio
@@ -767,7 +935,7 @@ def test_repository_filesystem_tools_do_not_route_or_contact_windows_agent_direc
         )
     )
 
-    assert source.count("execute_capability(") == 3
+    assert source.count("_execute_capability(") == 3
     assert "filesystem.file_exists" in source
     assert "filesystem.list_directory" in source
     assert "filesystem.read_file" in source
@@ -808,3 +976,37 @@ async def test_no_generic_filesystem_or_write_capable_tool_is_registered() -> No
     assert "delete_repository_file" not in tool_names
     assert "move_repository_file" not in tool_names
     assert "rename_repository_file" not in tool_names
+
+
+def test_activation_tools_expose_only_activation_selection_fields() -> None:
+    """Activation lifecycle tools expose no capability or provider controls."""
+    status_schema_keys = {
+        key.key for key in GetActivationStatusTool(object()).parameters.schema
+    }
+    action_tools = (
+        ConfirmActivationTool(object()),
+        RetryActivationTool(object()),
+        CancelActivationTool(object()),
+    )
+
+    assert status_schema_keys == {"activation_id", "summary_hint", "include_all"}
+
+    for tool in action_tools:
+        schema_keys = {key.key for key in tool.parameters.schema}
+
+        assert schema_keys == {"activation_id", "summary_hint"}
+
+
+def test_activation_guidance_prevents_argument_resubmission_and_latest_guessing() -> None:
+    """Prompt guidance keeps activation continuation server-owned."""
+    prompt = build_api_prompt("Canonical runtime identity.")
+
+    assert "activation_id as the handle for that exact request" in prompt
+    assert "Never ask the user to repeat repository IDs" in prompt
+    assert "Project-JARVIS stores the original request server-side" in prompt
+    assert "confirm_activation" in prompt
+    assert "retry_activation" in prompt
+    assert "cancel_activation" in prompt
+    assert "do not assume the latest" in prompt
+    assert "Home Assistant conversations are request/response" in prompt
+    assert "without another user message" in prompt

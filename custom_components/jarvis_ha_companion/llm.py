@@ -10,6 +10,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import llm
 from homeassistant.util.json import JsonObjectType
 
+from .activation import ActivationRegistry, ActivationWorkflow
 from .addon_client import JarvisAddonClient
 from .const import DOMAIN
 
@@ -123,11 +124,37 @@ CAPABILITY_GUIDANCE = (
     "exposed tools.' The currently exposed categories are runtime status, "
     "runtime information, runtime capability discovery, live system metrics, "
     "deterministic Project Search, approved repository file existence checks, "
-    "approved repository directory listing, and approved small UTF-8 "
-    "repository file reads. Do "
+    "approved repository directory listing, approved small UTF-8 repository "
+    "file reads, and approved application launch for Visual Studio. Do "
     "not describe write, Git, Task Scope, audit, or other discovered Windows "
     "Agent capabilities as directly callable unless a dedicated Companion "
     "tool exists. "
+    "Use launch_application when the user explicitly asks to open, start, "
+    "launch, or mach Visual Studio, Notepad, Chrome, Discord, Steam, "
+    "Obsidian, or the Windows Editor auf. The supported application_id "
+    "values are visual_studio, notepad, chrome, discord, steam and "
+    "obsidian. Do not "
+    "treat 'VS' as sufficient because it may mean "
+    "Visual Studio Code; ask a brief clarification when ambiguous. Do not "
+    "claim support for Visual Studio Code. Do not accept or mention paths, "
+    "arguments, working directories, environment variables, discovery "
+    "settings, or local overrides. "
+    "When a tool response says activation is pending, waiting, retryable, "
+    "cancelled, failed, or completed, treat activation_id as the handle for "
+    "that exact request. Never ask the user to repeat repository IDs, file "
+    "paths, metrics requests, or other capability arguments after activation "
+    "has started; Project-JARVIS stores the original request server-side. If "
+    "a response asks 'This requires waking your PC. Should I continue?', ask "
+    "that confirmation plainly. To continue a pending activation use "
+    "confirm_activation with the specific activation_id. To retry a "
+    "retry-waiting activation use retry_activation. If the user says no, "
+    "cancel, never mind, or stop, use cancel_activation. If multiple "
+    "activations are waiting for confirmation, ask which one by summary; do "
+    "not assume the latest. For natural follow-up questions such as 'Is it "
+    "ready?', 'Is everything finished?', 'Continue', 'How far are you?', or "
+    "'Cancel it', use the activation tools without exposing activation IDs "
+    "to the user. Home Assistant conversations are request/response; do not "
+    "claim that the Companion can speak later without another user message. "
     "Use inspect_project_module for questions about one specific project "
     "item, feature, or capability, and for explicit implementation, "
     "architecture, code structure, repository layout, or software "
@@ -143,9 +170,14 @@ class JarvisLLMAPI(llm.API):
         hass: HomeAssistant,
         client: JarvisAddonClient,
         identity_prompt: str | None,
+        activation_workflow: ActivationWorkflow | None = None,
     ) -> None:
         super().__init__(hass=hass, id=API_ID, name=API_NAME)
         self._client = client
+        self._activation_workflow = activation_workflow or ActivationWorkflow(
+            client=client,
+            registry=ActivationRegistry(),
+        )
         self._api_prompt = build_api_prompt(identity_prompt)
 
     async def async_get_api_instance(
@@ -158,25 +190,65 @@ class JarvisLLMAPI(llm.API):
             api_prompt=self._api_prompt,
             llm_context=llm_context,
             tools=[
-                InspectProjectModuleTool(self._client),
-                ListCapabilitiesTool(self._client),
-                ListExtensionsTool(self._client),
-                GetIdeasTool(self._client),
-                GetRoadmapItemsTool(self._client),
-                FindDecisionTool(self._client),
-                SearchProjectTool(self._client),
-                RepositoryFileExistsTool(self._client),
-                ListRepositoryDirectoryTool(self._client),
-                ReadRepositoryFileTool(self._client),
-                GetRuntimeStatusTool(self._client),
-                GetRuntimeInfoTool(self._client),
-                GetRuntimeCapabilitiesTool(self._client),
-                GetSystemMetricsTool(self._client),
+                InspectProjectModuleTool(self._client, self._activation_workflow),
+                ListCapabilitiesTool(self._client, self._activation_workflow),
+                ListExtensionsTool(self._client, self._activation_workflow),
+                GetIdeasTool(self._client, self._activation_workflow),
+                GetRoadmapItemsTool(self._client, self._activation_workflow),
+                FindDecisionTool(self._client, self._activation_workflow),
+                SearchProjectTool(self._client, self._activation_workflow),
+                RepositoryFileExistsTool(self._client, self._activation_workflow),
+                ListRepositoryDirectoryTool(self._client, self._activation_workflow),
+                ReadRepositoryFileTool(self._client, self._activation_workflow),
+                GetRuntimeStatusTool(self._client, self._activation_workflow),
+                GetRuntimeInfoTool(self._client, self._activation_workflow),
+                GetRuntimeCapabilitiesTool(self._client, self._activation_workflow),
+                GetSystemMetricsTool(self._client, self._activation_workflow),
+                LaunchApplicationTool(self._client, self._activation_workflow),
+                GetActivationStatusTool(self._activation_workflow),
+                ConfirmActivationTool(self._activation_workflow),
+                RetryActivationTool(self._activation_workflow),
+                CancelActivationTool(self._activation_workflow),
             ],
         )
 
 
-class InspectProjectModuleTool(llm.Tool):
+class JarvisCapabilityTool(llm.Tool):
+    """Base class for fixed Project-JARVIS capability tools."""
+
+    def __init__(
+        self,
+        client: JarvisAddonClient,
+        activation_workflow: ActivationWorkflow | None = None,
+    ) -> None:
+        self._client = client
+        self._activation_workflow = activation_workflow
+
+    async def _execute_capability(
+        self,
+        *,
+        capability: str,
+        parameters: dict[str, object],
+        llm_context: llm.LLMContext,
+        summary: str,
+    ) -> JsonObjectType:
+        response = await self._client.execute_capability(
+            capability=capability,
+            parameters=parameters,
+        )
+
+        if self._activation_workflow is None:
+            return response
+
+        return await self._activation_workflow.observe_capability_response(
+            response,
+            conversation_context_id=_conversation_context_id(llm_context),
+            capability_name=capability,
+            user_facing_summary=summary,
+        )
+
+
+class InspectProjectModuleTool(JarvisCapabilityTool):
     """Tool for specific Project JARVIS source inspection."""
 
     name = "inspect_project_module"
@@ -194,9 +266,6 @@ class InspectProjectModuleTool(llm.Tool):
         }
     )
 
-    def __init__(self, client: JarvisAddonClient) -> None:
-        self._client = client
-
     async def async_call(
         self,
         hass: HomeAssistant,
@@ -206,15 +275,17 @@ class InspectProjectModuleTool(llm.Tool):
         """Call the JARVIS Add-on inspect_project_module capability."""
         module_name = tool_input.tool_args["module_name"]
 
-        return await self._client.execute_capability(
+        return await self._execute_capability(
             capability="inspect_project_module",
             parameters={
                 "module_name": module_name,
             },
+            llm_context=llm_context,
+            summary=f"Inspect Project JARVIS item: {module_name}",
         )
 
 
-class ListExtensionsTool(llm.Tool):
+class ListExtensionsTool(JarvisCapabilityTool):
     """Tool for listing installed optional JARVIS extensions."""
 
     name = "list_extensions"
@@ -228,9 +299,6 @@ class ListExtensionsTool(llm.Tool):
     )
     parameters = vol.Schema({})
 
-    def __init__(self, client: JarvisAddonClient) -> None:
-        self._client = client
-
     async def async_call(
         self,
         hass: HomeAssistant,
@@ -238,13 +306,15 @@ class ListExtensionsTool(llm.Tool):
         llm_context: llm.LLMContext,
     ) -> JsonObjectType:
         """Call the JARVIS Add-on list_extensions capability."""
-        return await self._client.execute_capability(
+        return await self._execute_capability(
             capability="list_extensions",
             parameters={},
+            llm_context=llm_context,
+            summary="List JARVIS extensions",
         )
 
 
-class GetIdeasTool(llm.Tool):
+class GetIdeasTool(JarvisCapabilityTool):
     """Tool for retrieving documented JARVIS ideas."""
 
     name = "get_ideas"
@@ -255,9 +325,6 @@ class GetIdeasTool(llm.Tool):
     )
     parameters = vol.Schema({})
 
-    def __init__(self, client: JarvisAddonClient) -> None:
-        self._client = client
-
     async def async_call(
         self,
         hass: HomeAssistant,
@@ -265,13 +332,15 @@ class GetIdeasTool(llm.Tool):
         llm_context: llm.LLMContext,
     ) -> JsonObjectType:
         """Call the JARVIS Add-on get_ideas capability."""
-        return await self._client.execute_capability(
+        return await self._execute_capability(
             capability="get_ideas",
             parameters={},
+            llm_context=llm_context,
+            summary="Get JARVIS ideas",
         )
 
 
-class GetRoadmapItemsTool(llm.Tool):
+class GetRoadmapItemsTool(JarvisCapabilityTool):
     """Tool for retrieving documented JARVIS roadmap items."""
 
     name = "get_roadmap_items"
@@ -282,9 +351,6 @@ class GetRoadmapItemsTool(llm.Tool):
     )
     parameters = vol.Schema({})
 
-    def __init__(self, client: JarvisAddonClient) -> None:
-        self._client = client
-
     async def async_call(
         self,
         hass: HomeAssistant,
@@ -292,13 +358,15 @@ class GetRoadmapItemsTool(llm.Tool):
         llm_context: llm.LLMContext,
     ) -> JsonObjectType:
         """Call the JARVIS Add-on get_roadmap_items capability."""
-        return await self._client.execute_capability(
+        return await self._execute_capability(
             capability="get_roadmap_items",
             parameters={},
+            llm_context=llm_context,
+            summary="Get JARVIS roadmap items",
         )
 
 
-class FindDecisionTool(llm.Tool):
+class FindDecisionTool(JarvisCapabilityTool):
     """Tool for retrieving accepted JARVIS architecture decisions."""
 
     name = "find_decision"
@@ -309,9 +377,6 @@ class FindDecisionTool(llm.Tool):
     )
     parameters = vol.Schema({})
 
-    def __init__(self, client: JarvisAddonClient) -> None:
-        self._client = client
-
     async def async_call(
         self,
         hass: HomeAssistant,
@@ -319,13 +384,15 @@ class FindDecisionTool(llm.Tool):
         llm_context: llm.LLMContext,
     ) -> JsonObjectType:
         """Call the JARVIS Add-on find_decision capability."""
-        return await self._client.execute_capability(
+        return await self._execute_capability(
             capability="find_decision",
             parameters={},
+            llm_context=llm_context,
+            summary="Find JARVIS architecture decision",
         )
 
 
-class ListCapabilitiesTool(llm.Tool):
+class ListCapabilitiesTool(JarvisCapabilityTool):
     """Tool for listing implemented JARVIS capabilities."""
 
     name = "list_capabilities"
@@ -339,9 +406,6 @@ class ListCapabilitiesTool(llm.Tool):
     )
     parameters = vol.Schema({})
 
-    def __init__(self, client: JarvisAddonClient) -> None:
-        self._client = client
-
     async def async_call(
         self,
         hass: HomeAssistant,
@@ -349,13 +413,15 @@ class ListCapabilitiesTool(llm.Tool):
         llm_context: llm.LLMContext,
     ) -> JsonObjectType:
         """Call the JARVIS Add-on list_capabilities capability."""
-        return await self._client.execute_capability(
+        return await self._execute_capability(
             capability="list_capabilities",
             parameters={},
+            llm_context=llm_context,
+            summary="List JARVIS capabilities",
         )
 
 
-class SearchProjectTool(llm.Tool):
+class SearchProjectTool(JarvisCapabilityTool):
     """Tool for searching Project JARVIS knowledge through the Add-on."""
 
     name = "search_project"
@@ -377,9 +443,6 @@ class SearchProjectTool(llm.Tool):
         }
     )
 
-    def __init__(self, client: JarvisAddonClient) -> None:
-        self._client = client
-
     async def async_call(
         self,
         hass: HomeAssistant,
@@ -394,13 +457,15 @@ class SearchProjectTool(llm.Tool):
         if "limit" in tool_input.tool_args:
             parameters["limit"] = tool_input.tool_args["limit"]
 
-        return await self._client.execute_capability(
+        return await self._execute_capability(
             capability="search_project",
             parameters=parameters,
+            llm_context=llm_context,
+            summary=f"Search Project Knowledge for: {tool_input.tool_args['query']}",
         )
 
 
-class RepositoryFileExistsTool(llm.Tool):
+class RepositoryFileExistsTool(JarvisCapabilityTool):
     """Tool for checking an approved repository-relative file path."""
 
     name = "repository_file_exists"
@@ -419,9 +484,6 @@ class RepositoryFileExistsTool(llm.Tool):
         }
     )
 
-    def __init__(self, client: JarvisAddonClient) -> None:
-        self._client = client
-
     async def async_call(
         self,
         hass: HomeAssistant,
@@ -429,16 +491,22 @@ class RepositoryFileExistsTool(llm.Tool):
         llm_context: llm.LLMContext,
     ) -> JsonObjectType:
         """Call the JARVIS Add-on filesystem.file_exists capability."""
-        return await self._client.execute_capability(
+        return await self._execute_capability(
             capability="filesystem.file_exists",
             parameters={
                 "repository_id": tool_input.tool_args["repository_id"],
                 "relative_path": tool_input.tool_args["relative_path"],
             },
+            llm_context=llm_context,
+            summary=(
+                "Check file exists: "
+                f"{tool_input.tool_args['repository_id']}/"
+                f"{tool_input.tool_args['relative_path']}"
+            ),
         )
 
 
-class ListRepositoryDirectoryTool(llm.Tool):
+class ListRepositoryDirectoryTool(JarvisCapabilityTool):
     """Tool for listing an approved repository-relative directory path."""
 
     name = "list_repository_directory"
@@ -457,9 +525,6 @@ class ListRepositoryDirectoryTool(llm.Tool):
         }
     )
 
-    def __init__(self, client: JarvisAddonClient) -> None:
-        self._client = client
-
     async def async_call(
         self,
         hass: HomeAssistant,
@@ -467,16 +532,22 @@ class ListRepositoryDirectoryTool(llm.Tool):
         llm_context: llm.LLMContext,
     ) -> JsonObjectType:
         """Call the JARVIS Add-on filesystem.list_directory capability."""
-        return await self._client.execute_capability(
+        return await self._execute_capability(
             capability="filesystem.list_directory",
             parameters={
                 "repository_id": tool_input.tool_args["repository_id"],
                 "relative_path": tool_input.tool_args["relative_path"],
             },
+            llm_context=llm_context,
+            summary=(
+                "List directory: "
+                f"{tool_input.tool_args['repository_id']}/"
+                f"{tool_input.tool_args['relative_path']}"
+            ),
         )
 
 
-class ReadRepositoryFileTool(llm.Tool):
+class ReadRepositoryFileTool(JarvisCapabilityTool):
     """Tool for reading an approved repository-relative UTF-8 text file."""
 
     name = "read_repository_file"
@@ -496,9 +567,6 @@ class ReadRepositoryFileTool(llm.Tool):
         }
     )
 
-    def __init__(self, client: JarvisAddonClient) -> None:
-        self._client = client
-
     async def async_call(
         self,
         hass: HomeAssistant,
@@ -506,16 +574,22 @@ class ReadRepositoryFileTool(llm.Tool):
         llm_context: llm.LLMContext,
     ) -> JsonObjectType:
         """Call the JARVIS Add-on filesystem.read_file capability."""
-        return await self._client.execute_capability(
+        return await self._execute_capability(
             capability="filesystem.read_file",
             parameters={
                 "repository_id": tool_input.tool_args["repository_id"],
                 "relative_path": tool_input.tool_args["relative_path"],
             },
+            llm_context=llm_context,
+            summary=(
+                "Read file: "
+                f"{tool_input.tool_args['repository_id']}/"
+                f"{tool_input.tool_args['relative_path']}"
+            ),
         )
 
 
-class GetRuntimeStatusTool(llm.Tool):
+class GetRuntimeStatusTool(JarvisCapabilityTool):
     """Tool for checking whether the desktop runtime is reachable."""
 
     name = "get_runtime_status"
@@ -534,9 +608,6 @@ class GetRuntimeStatusTool(llm.Tool):
     )
     parameters = vol.Schema({})
 
-    def __init__(self, client: JarvisAddonClient) -> None:
-        self._client = client
-
     async def async_call(
         self,
         hass: HomeAssistant,
@@ -544,13 +615,15 @@ class GetRuntimeStatusTool(llm.Tool):
         llm_context: llm.LLMContext,
     ) -> JsonObjectType:
         """Call the JARVIS Add-on runtime health capability."""
-        return await self._client.execute_capability(
+        return await self._execute_capability(
             capability="system.health",
             parameters={},
+            llm_context=llm_context,
+            summary="Check Windows Agent reachability",
         )
 
 
-class GetRuntimeInfoTool(llm.Tool):
+class GetRuntimeInfoTool(JarvisCapabilityTool):
     """Tool for retrieving desktop runtime information."""
 
     name = "get_runtime_info"
@@ -561,9 +634,6 @@ class GetRuntimeInfoTool(llm.Tool):
     )
     parameters = vol.Schema({})
 
-    def __init__(self, client: JarvisAddonClient) -> None:
-        self._client = client
-
     async def async_call(
         self,
         hass: HomeAssistant,
@@ -571,13 +641,15 @@ class GetRuntimeInfoTool(llm.Tool):
         llm_context: llm.LLMContext,
     ) -> JsonObjectType:
         """Call the JARVIS Add-on runtime information capability."""
-        return await self._client.execute_capability(
+        return await self._execute_capability(
             capability="system.info",
             parameters={},
+            llm_context=llm_context,
+            summary="Get Windows Agent runtime information",
         )
 
 
-class GetRuntimeCapabilitiesTool(llm.Tool):
+class GetRuntimeCapabilitiesTool(JarvisCapabilityTool):
     """Tool for listing desktop runtime capabilities."""
 
     name = "get_runtime_capabilities"
@@ -591,9 +663,6 @@ class GetRuntimeCapabilitiesTool(llm.Tool):
     )
     parameters = vol.Schema({})
 
-    def __init__(self, client: JarvisAddonClient) -> None:
-        self._client = client
-
     async def async_call(
         self,
         hass: HomeAssistant,
@@ -601,13 +670,15 @@ class GetRuntimeCapabilitiesTool(llm.Tool):
         llm_context: llm.LLMContext,
     ) -> JsonObjectType:
         """Call the JARVIS Add-on runtime capabilities capability."""
-        return await self._client.execute_capability(
+        return await self._execute_capability(
             capability="system.capabilities",
             parameters={},
+            llm_context=llm_context,
+            summary="Get Windows Agent capability inventory",
         )
 
 
-class GetSystemMetricsTool(llm.Tool):
+class GetSystemMetricsTool(JarvisCapabilityTool):
     """Tool for retrieving a live desktop runtime metrics snapshot."""
 
     name = "get_system_metrics"
@@ -625,9 +696,6 @@ class GetSystemMetricsTool(llm.Tool):
     )
     parameters = vol.Schema({})
 
-    def __init__(self, client: JarvisAddonClient) -> None:
-        self._client = client
-
     async def async_call(
         self,
         hass: HomeAssistant,
@@ -635,10 +703,223 @@ class GetSystemMetricsTool(llm.Tool):
         llm_context: llm.LLMContext,
     ) -> JsonObjectType:
         """Call the JARVIS Add-on runtime metrics capability."""
-        return await self._client.execute_capability(
+        return await self._execute_capability(
             capability="system.metrics",
             parameters={},
+            llm_context=llm_context,
+            summary="Get Windows PC system metrics",
         )
+
+
+APPROVED_APPLICATION_IDS = frozenset(
+    {"chrome", "discord", "notepad", "obsidian", "steam", "visual_studio"}
+)
+APPLICATION_SUMMARIES = {
+    "chrome": "Open Google Chrome",
+    "discord": "Open Discord",
+    "notepad": "Open Notepad",
+    "obsidian": "Open Obsidian",
+    "steam": "Open Steam",
+    "visual_studio": "Open Visual Studio",
+}
+
+
+def _approved_application_id(value: object) -> str:
+    if value not in APPROVED_APPLICATION_IDS:
+        raise ValueError("application_id is not approved for launch")
+
+    return str(value)
+
+
+class LaunchApplicationTool(JarvisCapabilityTool):
+    """Tool for launching one approved registered Windows application."""
+
+    name = "launch_application"
+    description = (
+        "Use when the user explicitly asks to open, start, or launch Visual "
+        "Studio, including 'Oeffne Visual Studio', 'Starte Visual Studio', "
+        "'Launch Visual Studio', or 'Mach Visual Studio auf', and when the "
+        "user asks to open Notepad, den Editor, Chrome, Discord, Steam, or "
+        "Obsidian. Supported application_id values are visual_studio, "
+        "notepad, chrome, discord, steam, and obsidian. Do not use this for ambiguous "
+        "'VS' requests because that may mean Visual Studio Code; ask for "
+        "clarification. Do not claim Visual Studio Code support. This tool "
+        "accepts no paths, arguments, working directories, environment "
+        "variables, discovery settings, or local overrides."
+    )
+    parameters = vol.Schema(
+        {
+            vol.Required("application_id"): vol.All(str, _approved_application_id),
+        }
+    )
+
+    async def async_call(
+        self,
+        hass: HomeAssistant,
+        tool_input: llm.ToolInput,
+        llm_context: llm.LLMContext,
+    ) -> JsonObjectType:
+        """Call the JARVIS Add-on application.launch capability."""
+        application_id = tool_input.tool_args["application_id"]
+        return await self._execute_capability(
+            capability="application.launch",
+            parameters={
+                "application_id": application_id,
+            },
+            llm_context=llm_context,
+            summary=APPLICATION_SUMMARIES[str(application_id)],
+        )
+
+
+class GetActivationStatusTool(llm.Tool):
+    """Tool for checking one stored provider activation."""
+
+    name = "get_activation_status"
+    description = (
+        "Use for natural follow-up questions about pending JARVIS activation "
+        "work, such as whether the PC is ready, whether everything finished, "
+        "whether the user can continue, or how far the request is. "
+        "activation_id is optional; omit it when the active activation can be "
+        "resolved from the current conversation. Set include_all when the user "
+        "asks whether everything is finished."
+    )
+    parameters = vol.Schema(
+        {
+            vol.Optional("activation_id"): vol.All(str, vol.Length(min=1)),
+            vol.Optional("summary_hint"): vol.All(str, vol.Length(min=1)),
+            vol.Optional("include_all"): bool,
+        }
+    )
+
+    def __init__(self, activation_workflow: ActivationWorkflow) -> None:
+        self._activation_workflow = activation_workflow
+
+    async def async_call(
+        self,
+        hass: HomeAssistant,
+        tool_input: llm.ToolInput,
+        llm_context: llm.LLMContext,
+    ) -> JsonObjectType:
+        return await self._activation_workflow.get_follow_up_status(
+            activation_id=tool_input.tool_args.get("activation_id"),
+            conversation_context_id=_conversation_context_id(llm_context),
+            summary_hint=tool_input.tool_args.get("summary_hint"),
+            include_all=bool(tool_input.tool_args.get("include_all", False)),
+        )
+
+
+class ConfirmActivationTool(llm.Tool):
+    """Tool for confirming one pending provider activation."""
+
+    name = "confirm_activation"
+    description = (
+        "Use only after the user explicitly agrees to wake the PC for a "
+        "pending activation. activation_id is optional when the current "
+        "conversation has exactly one pending confirmation."
+    )
+    parameters = vol.Schema(
+        {
+            vol.Optional("activation_id"): vol.All(str, vol.Length(min=1)),
+            vol.Optional("summary_hint"): vol.All(str, vol.Length(min=1)),
+        }
+    )
+
+    def __init__(self, activation_workflow: ActivationWorkflow) -> None:
+        self._activation_workflow = activation_workflow
+
+    async def async_call(
+        self,
+        hass: HomeAssistant,
+        tool_input: llm.ToolInput,
+        llm_context: llm.LLMContext,
+    ) -> JsonObjectType:
+        return await self._activation_workflow.confirm_follow_up(
+            activation_id=tool_input.tool_args.get("activation_id"),
+            conversation_context_id=_conversation_context_id(llm_context),
+            summary_hint=tool_input.tool_args.get("summary_hint"),
+        )
+
+
+class RetryActivationTool(llm.Tool):
+    """Tool for accepting one retry-waiting provider activation."""
+
+    name = "retry_activation"
+    description = (
+        "Use only after the user explicitly agrees to retry a specific "
+        "activation that is waiting for retry confirmation. activation_id is "
+        "optional when the current conversation has exactly one retry-waiting "
+        "activation."
+    )
+    parameters = vol.Schema(
+        {
+            vol.Optional("activation_id"): vol.All(str, vol.Length(min=1)),
+            vol.Optional("summary_hint"): vol.All(str, vol.Length(min=1)),
+        }
+    )
+
+    def __init__(self, activation_workflow: ActivationWorkflow) -> None:
+        self._activation_workflow = activation_workflow
+
+    async def async_call(
+        self,
+        hass: HomeAssistant,
+        tool_input: llm.ToolInput,
+        llm_context: llm.LLMContext,
+    ) -> JsonObjectType:
+        return await self._activation_workflow.retry_follow_up(
+            activation_id=tool_input.tool_args.get("activation_id"),
+            conversation_context_id=_conversation_context_id(llm_context),
+            summary_hint=tool_input.tool_args.get("summary_hint"),
+        )
+
+
+class CancelActivationTool(llm.Tool):
+    """Tool for cancelling one provider activation."""
+
+    name = "cancel_activation"
+    description = (
+        "Use when the user says no, cancel, never mind, or stop for a "
+        "pending or retry-waiting activation. activation_id is optional when "
+        "the current conversation has exactly one active activation."
+    )
+    parameters = vol.Schema(
+        {
+            vol.Optional("activation_id"): vol.All(str, vol.Length(min=1)),
+            vol.Optional("summary_hint"): vol.All(str, vol.Length(min=1)),
+        }
+    )
+
+    def __init__(self, activation_workflow: ActivationWorkflow) -> None:
+        self._activation_workflow = activation_workflow
+
+    async def async_call(
+        self,
+        hass: HomeAssistant,
+        tool_input: llm.ToolInput,
+        llm_context: llm.LLMContext,
+    ) -> JsonObjectType:
+        return await self._activation_workflow.cancel_follow_up(
+            activation_id=tool_input.tool_args.get("activation_id"),
+            conversation_context_id=_conversation_context_id(llm_context),
+            summary_hint=tool_input.tool_args.get("summary_hint"),
+        )
+
+
+def _conversation_context_id(llm_context: llm.LLMContext) -> str | None:
+    """Best-effort extraction of a Home Assistant conversation context id."""
+    for attribute in ("context_id", "conversation_id", "id"):
+        value = getattr(llm_context, attribute, None)
+
+        if isinstance(value, str) and value:
+            return value
+
+    context = getattr(llm_context, "context", None)
+    value = getattr(context, "id", None)
+
+    if isinstance(value, str) and value:
+        return value
+
+    return None
 
 
 def async_setup_llm_api(

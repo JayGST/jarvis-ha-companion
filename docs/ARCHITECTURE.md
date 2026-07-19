@@ -117,6 +117,11 @@ The Companion Integration currently registers multiple LLM tools, including Proj
 * `get_runtime_info`
 * `get_runtime_capabilities`
 * `get_system_metrics`
+* `launch_application`
+* `get_activation_status`
+* `confirm_activation`
+* `retry_activation`
+* `cancel_activation`
 
 Each tool forwards directly to the matching Add-on capability.
 
@@ -140,6 +145,16 @@ The runtime tools are read-only and accept no parameters:
 Capability discovery is informational. A Windows Agent capability inventory describes operations implemented and advertised by the Agent; it is not the same as Claude tool availability. Companion exposure remains explicit and allowlisted through the tools registered in this integration.
 
 `get_system_metrics` is a dedicated read-only adapter for the fixed `system.metrics` capability. Project-JARVIS owns routing, the Windows Agent owns metric collection, and the Companion performs no local collection or interpretation. Optional metrics may be unavailable, and responses should include only the metrics relevant to the user's question unless raw metrics are explicitly requested.
+
+`launch_application` is a dedicated adapter for the fixed `application.launch` capability. It accepts only approved application ID enum values and forwards that value to Project-JARVIS. The Companion does not accept raw paths, shortcut paths, arguments, working directories, environment variables, discovery settings, local overrides, provider selection or direct Windows Agent communication.
+
+Activation lifecycle tools are dedicated adapters for Project-JARVIS Activation API resources. The Companion can check activation status, confirm one pending activation with the stored one-time confirmation token, retry one retry-waiting activation with the stored retry token when available, or cancel one activation. Activation entries are retained in memory only and are keyed by activation ID, but user-facing follow-up conversations do not require the user to know activation IDs.
+
+Conversation continuation is request/response. Home Assistant does not let the Companion resume a finished Claude response autonomously. Instead, natural follow-up requests such as "Is my PC ready?", "Is everything finished?", "How far are you?", "Continue", or "Cancel it" cause Claude to call the activation tools again. The Companion resolves the relevant activation from the current conversation context, stored user-facing summaries and active activation registry. A single active activation is selected automatically. Multiple matching activations produce a clarification response that lists summaries only. If no activation is pending, the Companion returns a natural no-active-request response.
+
+Status checks refresh the stored activation snapshot through `GET /api/v1/activations/{activation_id}`. When a refreshed status is `COMPLETED` and `result_available` is true, the Companion calls `GET /api/v1/activations/{activation_id}/result` exactly once and caches the returned result in memory. Later status checks reuse the cached result state instead of fetching the retained result again.
+
+Tokens are removed immediately after accepted or idempotent confirmation and retry calls, and terminal activation summaries are cleaned up lazily. The Companion does not persist activation state, expose token fields to Claude, create backend activation jobs, wake devices directly, use notifications, use WebSockets, or ask Project-JARVIS to execute client-resubmitted capability arguments.
 
 No tool contains Project Knowledge, Windows Agent, routing, or orchestration business logic. Project-JARVIS owns routing and capability execution.
 
