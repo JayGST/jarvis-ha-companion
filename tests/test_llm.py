@@ -14,6 +14,7 @@ from custom_components.jarvis_ha_companion.llm import (
     COMPANION_TOOL_INSTRUCTIONS,
     FALLBACK_IDENTITY_PROMPT,
     ConfirmActivationTool,
+    ControlDevicePowerTool,
     FindDecisionTool,
     GetActivationStatusTool,
     GetIdeasTool,
@@ -139,6 +140,7 @@ async def test_registered_llm_tools_forward_to_existing_capabilities() -> None:
         "get_runtime_capabilities",
         "get_system_metrics",
         "launch_application",
+        "control_device_power",
         "get_activation_status",
         "confirm_activation",
         "retry_activation",
@@ -249,6 +251,11 @@ async def test_registered_llm_tools_forward_to_existing_capabilities() -> None:
         llm.ToolInput({"application_id": "chrome"}),
         llm.LLMContext(),
     )
+    device_power_result = await ControlDevicePowerTool(client).async_call(
+        object(),
+        llm.ToolInput({"device_id": "gaming_pc", "action": "wake"}),
+        llm.LLMContext(),
+    )
 
     assert inspect_result["result"]["capability"] == "inspect_project_module"
     assert capabilities_result["result"]["capability"] == "list_capabilities"
@@ -270,6 +277,7 @@ async def test_registered_llm_tools_forward_to_existing_capabilities() -> None:
     assert launch_result["result"]["capability"] == "application.launch"
     assert notepad_result["result"]["capability"] == "application.launch"
     assert chrome_result["result"]["capability"] == "application.launch"
+    assert device_power_result["result"]["capability"] == "device.power"
     assert client.calls == [
         ("inspect_project_module", {"module_name": "Windows Agent"}),
         ("list_capabilities", {}),
@@ -297,6 +305,7 @@ async def test_registered_llm_tools_forward_to_existing_capabilities() -> None:
         ("application.launch", {"application_id": "visual_studio"}),
         ("application.launch", {"application_id": "notepad"}),
         ("application.launch", {"application_id": "chrome"}),
+        ("device.power", {"device_id": "gaming_pc", "action": "wake"}),
     ]
 
 
@@ -659,6 +668,102 @@ def test_launch_application_tool_has_no_direct_windows_or_process_access() -> No
     assert "provider" not in source
     assert "route" not in source.lower()
     assert "working_directory" not in source
+
+
+@pytest.mark.asyncio
+async def test_control_device_power_tool_schema_and_fixed_mapping() -> None:
+    """Device power exposes only approved device/action enums."""
+    client = FakeClient()
+    tool = ControlDevicePowerTool(client)
+    schema_keys = {key.key for key in tool.parameters.schema}
+
+    result = await tool.async_call(
+        object(),
+        llm.ToolInput(
+            {
+                "device_id": "gaming_pc",
+                "action": "wake",
+                "domain": "wake_on_lan",
+                "service": "send_magic_packet",
+                "mac_address": "00:00:00:00:00:00",
+                "broadcast_address": "127.0.0.1",
+                "port": 1,
+                "entity_id": "switch.gaming_pc",
+                "script": "script.wake_pc",
+            }
+        ),
+        llm.LLMContext(),
+    )
+
+    assert schema_keys == {"device_id", "action"}
+    assert tool.parameters({"device_id": "gaming_pc", "action": "wake"}) == {
+        "device_id": "gaming_pc",
+        "action": "wake",
+    }
+    with pytest.raises(Exception):
+        tool.parameters({"device_id": "desktop", "action": "wake"})
+    with pytest.raises(Exception):
+        tool.parameters({"device_id": "gaming_pc", "action": "shutdown"})
+    assert client.calls == [("device.power", {"device_id": "gaming_pc", "action": "wake"})]
+    assert result == {
+        "result": {
+            "capability": "device.power",
+            "parameters": {"device_id": "gaming_pc", "action": "wake"},
+        }
+    }
+
+
+@pytest.mark.asyncio
+async def test_control_device_power_tool_passes_activation_summary() -> None:
+    """The device power adapter supplies a request-specific summary."""
+    client = FakeClient()
+    workflow = FakeActivationWorkflow()
+    tool = ControlDevicePowerTool(client, workflow)
+
+    await tool.async_call(
+        object(),
+        llm.ToolInput({"device_id": "gaming_pc", "action": "wake"}),
+        llm.LLMContext(),
+    )
+
+    assert client.calls == [("device.power", {"device_id": "gaming_pc", "action": "wake"})]
+    assert workflow.calls[0]["capability_name"] == "device.power"
+    assert workflow.calls[0]["user_facing_summary"] == "Wake Gaming-PC"
+
+
+def test_control_device_power_guidance_avoids_readiness_claims() -> None:
+    """Prompt and tool text define wake semantics narrowly."""
+    prompt = build_api_prompt("Canonical runtime identity.")
+    description = ControlDevicePowerTool(FakeClient()).description
+
+    assert "Use control_device_power" in prompt
+    assert "device_id is gaming_pc" in prompt
+    assert "only supported action is wake" in prompt
+    assert "does not prove the PC booted" in prompt
+    assert "Windows Agent is reachable" in prompt
+    assert "arbitrary Home Assistant service calls" in prompt
+    assert "does not call Home Assistant directly" in description
+    assert "Success means the Wake-on-LAN request was sent" in description
+    assert "not that the PC booted or is ready" in description
+
+
+def test_control_device_power_tool_has_no_direct_home_assistant_access() -> None:
+    """Device power stays behind Project-JARVIS fixed capability execution."""
+    source = inspect.getsource(ControlDevicePowerTool)
+
+    assert source.count("_execute_capability(") == 1
+    assert "device.power" in source
+    assert "gaming_pc" in source
+    assert "wake" in source
+    assert "async_get_clientsession" not in source
+    assert "requests" not in source
+    assert "httpx" not in source
+    assert "wake_on_lan" not in source
+    assert "call_service" not in source
+    assert "send_magic_packet" not in source
+    assert "entity_id" not in source
+    assert "mac_address" not in source
+    assert "broadcast_address" not in source
 
 
 @pytest.mark.asyncio

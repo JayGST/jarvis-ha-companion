@@ -125,10 +125,19 @@ CAPABILITY_GUIDANCE = (
     "runtime information, runtime capability discovery, live system metrics, "
     "deterministic Project Search, approved repository file existence checks, "
     "approved repository directory listing, approved small UTF-8 repository "
-    "file reads, and approved application launch for Visual Studio. Do "
+    "file reads, approved application launch for Visual Studio, and approved "
+    "device wake for the registered Gaming-PC. Do "
     "not describe write, Git, Task Scope, audit, or other discovered Windows "
     "Agent capabilities as directly callable unless a dedicated Companion "
     "tool exists. "
+    "Use control_device_power when the user explicitly asks to wake, start, "
+    "turn on, einschalten, starten, wecken, or mach an the registered "
+    "Gaming-PC or main PC. The only supported device_id is gaming_pc and the "
+    "only supported action is wake. Success means the Wake-on-LAN request was "
+    "sent through Project-JARVIS and Home Assistant; it does not prove the PC "
+    "booted, became ready, or that the Windows Agent is reachable. Do not use "
+    "this tool for shutdown, restart, sleep, hibernate, scripts, entities, or "
+    "arbitrary Home Assistant service calls. "
     "Use launch_application when the user explicitly asks to open, start, "
     "launch, or mach Visual Studio, Notepad, Chrome, Discord, Steam, "
     "Obsidian, or the Windows Editor auf. The supported application_id "
@@ -205,6 +214,7 @@ class JarvisLLMAPI(llm.API):
                 GetRuntimeCapabilitiesTool(self._client, self._activation_workflow),
                 GetSystemMetricsTool(self._client, self._activation_workflow),
                 LaunchApplicationTool(self._client, self._activation_workflow),
+                ControlDevicePowerTool(self._client, self._activation_workflow),
                 GetActivationStatusTool(self._activation_workflow),
                 ConfirmActivationTool(self._activation_workflow),
                 RetryActivationTool(self._activation_workflow),
@@ -768,6 +778,69 @@ class LaunchApplicationTool(JarvisCapabilityTool):
             },
             llm_context=llm_context,
             summary=APPLICATION_SUMMARIES[str(application_id)],
+        )
+
+
+APPROVED_DEVICE_POWER_IDS = frozenset({"gaming_pc"})
+APPROVED_DEVICE_POWER_ACTIONS = frozenset({"wake"})
+DEVICE_POWER_SUMMARIES = {
+    ("gaming_pc", "wake"): "Wake Gaming-PC",
+}
+
+
+def _approved_device_power_id(value: object) -> str:
+    if value not in APPROVED_DEVICE_POWER_IDS:
+        raise ValueError("device_id is not approved for power control")
+
+    return str(value)
+
+
+def _approved_device_power_action(value: object) -> str:
+    if value not in APPROVED_DEVICE_POWER_ACTIONS:
+        raise ValueError("action is not approved for device power control")
+
+    return str(value)
+
+
+class ControlDevicePowerTool(JarvisCapabilityTool):
+    """Tool for one approved registered device power action."""
+
+    name = "control_device_power"
+    description = (
+        "Use when the user explicitly asks to wake, start, turn on, "
+        "einschalten, starten, wecken, or mach an the registered Gaming-PC "
+        "or main PC. Supported device_id is gaming_pc. Supported action is "
+        "wake. This forwards to Project-JARVIS device.power and does not "
+        "call Home Assistant directly. It accepts no MAC address, IP address, "
+        "broadcast address, port, entity, script, domain, service, or raw "
+        "payload. Success means the Wake-on-LAN request was sent, not that "
+        "the PC booted or is ready."
+    )
+    parameters = vol.Schema(
+        {
+            vol.Required("device_id"): vol.All(str, _approved_device_power_id),
+            vol.Required("action"): vol.All(str, _approved_device_power_action),
+        }
+    )
+
+    async def async_call(
+        self,
+        hass: HomeAssistant,
+        tool_input: llm.ToolInput,
+        llm_context: llm.LLMContext,
+    ) -> JsonObjectType:
+        """Call the JARVIS Add-on device.power capability."""
+        device_id = str(tool_input.tool_args["device_id"])
+        action = str(tool_input.tool_args["action"])
+
+        return await self._execute_capability(
+            capability="device.power",
+            parameters={
+                "device_id": device_id,
+                "action": action,
+            },
+            llm_context=llm_context,
+            summary=DEVICE_POWER_SUMMARIES[(device_id, action)],
         )
 
 
